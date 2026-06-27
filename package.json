@@ -1,0 +1,13 @@
+{
+  "name": "aegis-guardian",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AEGIS — Autonomous Vehicle Guardian. An in-car AI guardian that watches your position, motion & vehicle health, talks to you after a crash, and autonomously gets help (with an AI-written responder briefing) when you can't.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

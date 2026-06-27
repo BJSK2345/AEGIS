@@ -1,0 +1,1626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AEGIS — Autonomous Vehicle Guardian</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+<!-- Leaflet (real dark map, no API key) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+/* ============================================================
+   AEGIS — design tokens
+   ============================================================ */
+:root{
+  --bg:#06080f;
+  --bg2:#0a0f1d;
+  --panel:rgba(18,24,40,0.55);
+  --panel-2:rgba(13,18,32,0.7);
+  --brd:rgba(255,255,255,0.08);
+  --brd-2:rgba(255,255,255,0.14);
+  --txt:#e8eef9;
+  --muted:#8a97ad;
+  --faint:#5a6678;
+  --cyan:#2ad4ee;
+  --cyan-2:#38bdf8;
+  --ok:#34d399;
+  --warn:#fbbf24;
+  --crit:#fb5670;
+  --crit-2:#ef4444;
+  --r:18px;
+  --shadow:0 20px 60px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg);
+  color:var(--txt);
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+/* animated ambient background */
+.bg-fx{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.bg-fx::before{
+  content:"";position:absolute;inset:-20%;
+  background:
+    radial-gradient(60% 50% at 18% 12%, rgba(42,212,238,.13), transparent 60%),
+    radial-gradient(55% 45% at 85% 8%, rgba(56,99,255,.12), transparent 60%),
+    radial-gradient(60% 60% at 75% 95%, rgba(34,211,153,.07), transparent 60%),
+    linear-gradient(180deg,var(--bg),var(--bg2));
+}
+.bg-fx::after{ /* grid */
+  content:"";position:absolute;inset:0;opacity:.35;
+  background-image:
+    linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);
+  background-size:46px 46px;
+  -webkit-mask-image:radial-gradient(circle at 50% 30%,#000,transparent 80%);
+          mask-image:radial-gradient(circle at 50% 30%,#000,transparent 80%);
+}
+.app-wrap{position:relative;z-index:1}
+
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:20px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.18)}
+
+/* glass panel */
+.panel{
+  background:linear-gradient(180deg,var(--panel),var(--panel-2));
+  border:1px solid var(--brd);
+  border-radius:var(--r);
+  backdrop-filter:blur(18px) saturate(140%);
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  box-shadow:var(--shadow);
+  position:relative;
+}
+.panel::before{ /* top highlight */
+  content:"";position:absolute;inset:0;border-radius:var(--r);
+  background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 30%);
+  pointer-events:none;
+}
+.panel-h{
+  display:flex;align-items:center;gap:10px;
+  padding:14px 18px;border-bottom:1px solid var(--brd);
+}
+.panel-h .ic{width:18px;height:18px;color:var(--cyan);flex:0 0 auto}
+.panel-h h3{margin:0;font-size:12.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.panel-h .tag{margin-left:auto;font-size:11px;color:var(--faint);font-family:'JetBrains Mono',monospace}
+
+/* ============================================================
+   CONNECT SCREEN
+   ============================================================ */
+#connectScreen{
+  position:fixed;inset:0;z-index:50;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:24px;
+}
+.radar{
+  position:relative;width:230px;height:230px;margin-bottom:8px;
+  display:grid;place-items:center;
+}
+.radar .ring{
+  position:absolute;border:1px solid rgba(42,212,238,.35);border-radius:50%;
+  inset:0;animation:radar 3s ease-out infinite;
+}
+.radar .ring:nth-child(2){animation-delay:1s}
+.radar .ring:nth-child(3){animation-delay:2s}
+@keyframes radar{0%{transform:scale(.25);opacity:.9}100%{transform:scale(1);opacity:0}}
+.shield{
+  width:104px;height:104px;border-radius:30px;display:grid;place-items:center;
+  background:linear-gradient(160deg,rgba(42,212,238,.25),rgba(56,99,255,.12));
+  border:1px solid rgba(42,212,238,.4);
+  box-shadow:0 0 50px rgba(42,212,238,.35), inset 0 0 30px rgba(42,212,238,.15);
+  color:var(--cyan);position:relative;z-index:2;
+}
+.shield svg{width:54px;height:54px;filter:drop-shadow(0 0 8px rgba(42,212,238,.6))}
+.brand-name{font-size:46px;font-weight:800;letter-spacing:.32em;margin:18px 0 4px;
+  background:linear-gradient(90deg,#fff,#9fe9f6 60%,var(--cyan));
+  -webkit-background-clip:text;background-clip:text;color:transparent;padding-left:.32em}
+.brand-sub{color:var(--muted);font-size:14.5px;letter-spacing:.06em;max-width:440px;line-height:1.5}
+.connect-btn{
+  margin-top:30px;border:none;cursor:pointer;
+  font-family:inherit;font-size:15px;font-weight:700;letter-spacing:.04em;
+  color:#04121a;padding:16px 38px;border-radius:14px;
+  background:linear-gradient(180deg,#5ee7fb,var(--cyan));
+  box-shadow:0 12px 36px rgba(42,212,238,.4), inset 0 1px 0 rgba(255,255,255,.5);
+  display:inline-flex;align-items:center;gap:12px;transition:transform .15s, box-shadow .2s,filter .2s;
+}
+.connect-btn:hover{transform:translateY(-2px);box-shadow:0 18px 48px rgba(42,212,238,.55)}
+.connect-btn:active{transform:translateY(0)}
+.connect-btn:disabled{filter:saturate(.7) brightness(.9);cursor:default}
+.connect-btn .dot{width:9px;height:9px;border-radius:50%;background:#04121a;box-shadow:0 0 0 3px rgba(4,18,26,.3)}
+#connectStatus{margin-top:22px;height:20px;color:var(--cyan);font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.04em}
+.connect-note{margin-top:8px;color:var(--faint);font-size:12px}
+#connectScreen.connecting .connect-btn{display:none}
+#connectScreen.connecting .vcard-preview{opacity:.4}
+
+.vcard-preview{
+  margin-top:26px;display:flex;gap:14px;align-items:center;
+  padding:12px 18px;border:1px solid var(--brd);border-radius:14px;
+  background:rgba(255,255,255,.03);
+}
+.vcard-preview .car-ic{font-size:26px}
+.vcard-preview .vp-name{font-weight:700;font-size:14px}
+.vcard-preview .vp-sub{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+
+/* ============================================================
+   APP / DASHBOARD
+   ============================================================ */
+#app{display:none;flex-direction:column;min-height:100vh;padding:16px 18px 28px}
+#app.live{display:flex}
+
+/* top bar */
+.topbar{
+  display:flex;align-items:center;gap:16px;padding:10px 14px;margin-bottom:16px;
+}
+.logo{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:.22em;font-size:18px}
+.logo .lmark{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(160deg,rgba(42,212,238,.3),rgba(56,99,255,.12));
+  border:1px solid rgba(42,212,238,.4);color:var(--cyan)}
+.logo .lmark svg{width:19px;height:19px}
+.topbar .veh{display:flex;flex-direction:column;line-height:1.25;padding-left:6px;border-left:1px solid var(--brd);margin-left:4px}
+.topbar .veh b{font-size:13.5px;font-weight:600}
+.topbar .veh span{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+.topbar .spacer{flex:1}
+.pill{
+  display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;
+  font-size:12px;font-weight:600;border:1px solid var(--brd);background:rgba(255,255,255,.03)
+}
+.pill .live-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.5)}70%{box-shadow:0 0 0 9px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+.pill.gps .live-dot{background:var(--cyan);animation:none;box-shadow:0 0 8px var(--cyan)}
+.clock{font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--muted)}
+
+/* scan countdown ring */
+.scan-wrap{display:flex;align-items:center;gap:10px;padding:6px 14px;border-radius:999px;border:1px solid var(--brd);background:rgba(255,255,255,.03)}
+.scan-wrap .ring-mini{width:34px;height:34px;position:relative}
+.scan-wrap .ring-mini svg{transform:rotate(-90deg)}
+.scan-wrap .ring-mini .num{position:absolute;inset:0;display:grid;place-items:center;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.scan-wrap .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);line-height:1.3}
+.scan-wrap .lbl b{display:block;color:var(--txt);font-size:11.5px;letter-spacing:.04em}
+.icon-btn{width:38px;height:38px;border-radius:11px;border:1px solid var(--brd);background:rgba(255,255,255,.03);
+  color:var(--muted);cursor:pointer;display:grid;place-items:center;transition:.15s}
+.icon-btn:hover{color:var(--txt);border-color:var(--brd-2)}
+.icon-btn svg{width:18px;height:18px}
+
+/* demo bar */
+.demo-bar{display:flex;align-items:center;gap:10px;padding:11px 16px;margin-bottom:16px;flex-wrap:wrap}
+.demo-bar .dl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+.btn{font-family:inherit;font-weight:600;font-size:13px;cursor:pointer;border-radius:11px;
+  padding:9px 16px;border:1px solid var(--brd-2);background:rgba(255,255,255,.04);color:var(--txt);
+  display:inline-flex;align-items:center;gap:8px;transition:.15s}
+.btn:hover{background:rgba(255,255,255,.09);transform:translateY(-1px)}
+.btn svg{width:15px;height:15px}
+.btn.warn{border-color:rgba(251,191,36,.4);color:#ffd970;background:rgba(251,191,36,.08)}
+.btn.warn:hover{background:rgba(251,191,36,.16)}
+.btn.crit{border-color:rgba(251,86,112,.5);color:#ff8298;background:rgba(251,86,112,.1)}
+.btn.crit:hover{background:rgba(251,86,112,.2)}
+.btn.ghost{color:var(--muted)}
+.demo-bar .spacer{flex:1}
+
+/* dashboard grid */
+.dash{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(330px,1fr);gap:16px;align-items:start}
+.col{display:flex;flex-direction:column;gap:16px}
+
+/* map */
+.map-panel{overflow:hidden}
+#map{height:430px;width:100%;background:#0a0f1d}
+.map-fb{height:430px;display:grid;place-items:center;color:var(--muted);font-size:13px}
+.leaflet-container{background:#0a0f1d;font-family:inherit}
+.map-hud{position:absolute;left:14px;bottom:14px;z-index:600;display:flex;gap:10px;flex-wrap:wrap}
+.hud-chip{
+  background:rgba(8,12,22,.72);backdrop-filter:blur(8px);border:1px solid var(--brd);
+  border-radius:12px;padding:8px 13px;min-width:78px;
+}
+.hud-chip .k{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.hud-chip .v{font-size:18px;font-weight:700;font-family:'JetBrains Mono',monospace;line-height:1.15}
+.hud-chip .v small{font-size:11px;color:var(--muted);font-weight:500}
+.map-loc{position:absolute;left:14px;top:14px;z-index:600;display:flex;align-items:center;gap:8px;
+  background:rgba(8,12,22,.72);backdrop-filter:blur(8px);border:1px solid var(--brd);border-radius:12px;padding:7px 12px;font-size:12px}
+.map-loc svg{width:14px;height:14px;color:var(--cyan)}
+
+/* car marker */
+.car-pin{position:relative;width:40px;height:40px}
+.car-arrow{position:absolute;inset:0;margin:auto;width:0;height:0;
+  border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:22px solid var(--cyan);
+  transform-origin:50% 60%;filter:drop-shadow(0 0 6px rgba(42,212,238,.9));transition:transform .12s linear}
+.car-pulse{position:absolute;inset:0;border-radius:50%;background:rgba(42,212,238,.25);
+  animation:carpulse 2s ease-out infinite}
+@keyframes carpulse{0%{transform:scale(.4);opacity:.7}100%{transform:scale(1.5);opacity:0}}
+.resp-pin{width:34px;height:34px;display:grid;place-items:center;font-size:20px;
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,.6))}
+
+/* telemetry */
+.telem-top{display:flex;gap:18px;align-items:center;padding:18px}
+.speedo{position:relative;width:148px;height:148px;flex:0 0 auto}
+.speedo svg{transform:rotate(-90deg)}
+.speedo .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.speedo .sv{font-size:42px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1}
+.speedo .su{font-size:11px;letter-spacing:.18em;color:var(--muted);margin-top:2px}
+.speedo .head{font-size:11px;color:var(--cyan);font-family:'JetBrains Mono',monospace;margin-top:5px}
+.mini-rings{display:grid;grid-template-columns:1fr 1fr;gap:14px;flex:1}
+.mini{display:flex;align-items:center;gap:10px}
+.mini .ring-w{position:relative;width:50px;height:50px;flex:0 0 auto}
+.mini .ring-w svg{transform:rotate(-90deg)}
+.mini .ring-w .c{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.mini .mt .mk{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.mini .mt .mv{font-size:14px;font-weight:700}
+
+.tiles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--brd);border-top:1px solid var(--brd)}
+.tile{background:var(--panel-2);padding:13px 16px}
+.tile .tk{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.tile .tv{font-size:19px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px}
+.tile .tv small{font-size:11px;color:var(--muted);font-weight:500}
+
+/* tires + g pad */
+.tg{display:grid;grid-template-columns:1.3fr 1fr;gap:1px;background:var(--brd);border-top:1px solid var(--brd)}
+.tg-cell{background:var(--panel-2);padding:14px 16px}
+.tg-cell .ck{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.car-top{position:relative;width:84px;height:120px;margin:0 auto;
+  border:2px solid var(--brd-2);border-radius:26px;background:rgba(255,255,255,.02)}
+.car-top::after{content:"";position:absolute;left:22%;right:22%;top:18%;height:30%;border-radius:8px;background:rgba(42,212,238,.08);border:1px solid var(--brd)}
+.tire{position:absolute;width:30px;text-align:center;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;
+  color:var(--ok)}
+.tire small{display:block;font-size:8px;color:var(--faint);font-weight:500}
+.tire.fl{top:-9px;left:-20px}.tire.fr{top:-9px;right:-20px}
+.tire.rl{bottom:-9px;left:-20px}.tire.rr{bottom:-9px;right:-20px}
+.tire.low{color:var(--warn)}
+.gpad{position:relative;width:96px;height:96px;margin:6px auto 0;border-radius:14px;
+  border:1px solid var(--brd-2);background:
+   radial-gradient(circle,rgba(255,255,255,.05),transparent 70%);overflow:hidden}
+.gpad::before,.gpad::after{content:"";position:absolute;background:var(--brd)}
+.gpad::before{left:50%;top:0;bottom:0;width:1px}
+.gpad::after{top:50%;left:0;right:0;height:1px}
+#gDot{position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px;border-radius:50%;
+  background:var(--cyan);box-shadow:0 0 12px var(--cyan);transition:transform .25s ease}
+.gval{text-align:center;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700}
+
+/* system status */
+.sys-list{padding:8px 0}
+.sys-row{display:flex;align-items:center;gap:12px;padding:11px 18px}
+.sys-row .nm{font-size:13px}
+.sys-row .st{margin-left:auto;font-size:11px;font-weight:700;letter-spacing:.04em}
+.sdot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.sdot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.sdot.warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.sdot.crit{background:var(--crit);box-shadow:0 0 8px var(--crit)}
+.st.ok{color:var(--ok)}.st.warn{color:var(--warn)}.st.crit{color:var(--crit)}
+
+/* info card */
+.info-grid{padding:6px 18px 16px}
+.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-row .k{color:var(--muted)}
+.info-row .v{font-weight:600;font-family:'JetBrains Mono',monospace;font-size:12.5px}
+
+/* event log */
+.log-panel{flex:1;min-height:0}
+#log{max-height:260px;overflow-y:auto;padding:8px 0}
+.log-row{display:flex;align-items:flex-start;gap:10px;padding:7px 18px;font-size:12.5px;line-height:1.45;
+  animation:slidein .25s ease}
+@keyframes slidein{from{opacity:0;transform:translateY(-4px)}to{opacity:1}}
+.log-time{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--faint);flex:0 0 auto;margin-top:1px}
+.log-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:0 0 auto;margin-top:5px}
+.log-msg{color:var(--txt)}
+.log-ok .log-dot{background:var(--ok)} .log-ok .log-msg{color:#bdebd6}
+.log-warn .log-dot{background:var(--warn)} .log-warn .log-msg{color:#ffe6a6}
+.log-crit .log-dot{background:var(--crit)} .log-crit .log-msg{color:#ffb3c0;font-weight:600}
+
+/* hazard banner */
+#hazardBanner{
+  position:fixed;left:50%;top:18px;transform:translate(-50%,-140%);z-index:60;
+  display:flex;align-items:center;gap:14px;max-width:min(620px,92vw);
+  padding:14px 20px;border-radius:16px;
+  background:linear-gradient(180deg,rgba(60,44,8,.92),rgba(40,28,4,.92));
+  border:1px solid rgba(251,191,36,.5);box-shadow:0 20px 50px rgba(0,0,0,.5),0 0 40px rgba(251,191,36,.2);
+  backdrop-filter:blur(12px);transition:transform .4s cubic-bezier(.2,1.2,.3,1)}
+#hazardBanner.show{transform:translate(-50%,0)}
+#hazardBanner .hz-ic{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;
+  background:rgba(251,191,36,.18);color:var(--warn);animation:shake .5s ease}
+#hazardBanner .hz-ic svg{width:24px;height:24px}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+#hzTitle{font-weight:700;font-size:14px;color:#ffe27a}
+#hzMsg{font-size:12.5px;color:#e8d9b0;margin-top:2px}
+
+/* toasts */
+#toasts{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;flex-direction:column;gap:10px;max-width:340px}
+.toast{display:flex;gap:12px;padding:13px 15px;border-radius:14px;border:1px solid var(--brd-2);
+  background:rgba(14,20,34,.92);backdrop-filter:blur(12px);box-shadow:var(--shadow);
+  transform:translateX(120%);opacity:0;transition:.35s cubic-bezier(.2,1,.3,1)}
+.toast.show{transform:translateX(0);opacity:1}
+.toast .toast-ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto}
+.toast .toast-ic svg{width:18px;height:18px}
+.toast-title{font-weight:700;font-size:13px}
+.toast-msg{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.4}
+.toast-ok .toast-ic{background:rgba(52,211,153,.15);color:var(--ok)}
+.toast-warn .toast-ic{background:rgba(251,191,36,.15);color:var(--warn)}
+.toast-crit .toast-ic{background:rgba(251,86,112,.15);color:var(--crit)}
+.toast-info .toast-ic{background:rgba(42,212,238,.15);color:var(--cyan)}
+
+/* ============================================================
+   EMERGENCY OVERLAY
+   ============================================================ */
+#emergency{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;padding:24px;
+  background:radial-gradient(circle at 50% 0%,rgba(120,20,40,.4),rgba(4,6,12,.86));backdrop-filter:blur(6px)}
+#emergency.show{display:flex;animation:fadein .3s ease}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.em-card{width:min(680px,96vw);max-height:92vh;display:flex;flex-direction:column;
+  border-radius:22px;overflow:hidden;border:1px solid rgba(251,86,112,.35);
+  background:linear-gradient(180deg,rgba(20,12,18,.96),rgba(10,8,14,.98));box-shadow:0 40px 100px rgba(0,0,0,.7),0 0 80px rgba(251,86,112,.2)}
+.em-head{display:flex;align-items:center;gap:14px;padding:18px 22px;
+  background:linear-gradient(90deg,rgba(251,86,112,.18),transparent);border-bottom:1px solid rgba(251,86,112,.25)}
+.em-head .beacon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;flex:0 0 auto;
+  background:rgba(251,86,112,.2);color:var(--crit);animation:beacon 1s steps(2) infinite}
+@keyframes beacon{0%{opacity:1;box-shadow:0 0 0 0 rgba(251,86,112,.6)}50%{opacity:.55;box-shadow:0 0 0 10px rgba(251,86,112,0)}100%{opacity:1}}
+.em-head .beacon svg{width:24px;height:24px}
+.em-head h2{margin:0;font-size:17px;font-weight:800;letter-spacing:.06em}
+.em-head .sub{font-size:12px;color:#e7a9b4;font-family:'JetBrains Mono',monospace;margin-top:2px}
+.em-head .spacer{flex:1}
+.em-head .case{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);text-align:right}
+
+.em-incident{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:rgba(255,255,255,.07)}
+.em-incident .ii{background:rgba(12,8,12,.6);padding:11px 16px}
+.em-incident .ik{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.em-incident .iv{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px}
+
+#emBanner{display:none;text-align:center;padding:11px;font-weight:800;letter-spacing:.14em;font-size:12.5px;
+  color:#fff;background:repeating-linear-gradient(45deg,rgba(251,86,112,.25),rgba(251,86,112,.25) 12px,rgba(251,86,112,.12) 12px,rgba(251,86,112,.12) 24px);
+  border-top:1px solid rgba(251,86,112,.3);border-bottom:1px solid rgba(251,86,112,.3)}
+#emBanner.show{display:block;animation:bannerin .4s ease}
+@keyframes bannerin{from{opacity:0;letter-spacing:.3em}to{opacity:1}}
+
+#emSteps{padding:14px 20px;overflow-y:auto;flex:1}
+.em-step{display:flex;gap:14px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.05);animation:slidein .3s ease}
+.em-step:last-child{border-bottom:none}
+.em-ic{width:30px;height:30px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
+  border:1px solid var(--brd-2);background:rgba(255,255,255,.04)}
+.em-ic svg{width:16px;height:16px}
+.em-step.active .em-ic{border-color:var(--cyan);color:var(--cyan)}
+.em-step.done.em-ok .em-ic{border-color:var(--ok);color:var(--ok);background:rgba(52,211,153,.12)}
+.em-step.done.em-crit .em-ic{border-color:var(--crit);color:var(--crit);background:rgba(251,86,112,.12)}
+.em-step.done.em-warn .em-ic{border-color:var(--warn);color:var(--warn)}
+.em-title{font-weight:700;font-size:14px}
+.em-desc{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.45}
+.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.dispatch-card{margin-top:10px;border:1px solid var(--brd);border-radius:12px;padding:12px 14px;background:rgba(255,255,255,.03)}
+.dispatch-card .dc-row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
+.dispatch-card .dc-row .k{color:var(--muted)} .dispatch-card .dc-row .v{font-family:'JetBrains Mono',monospace;font-weight:600}
+
+/* driver responsiveness check */
+#emDriverCheck{display:none;flex-direction:column;align-items:center;gap:14px;padding:20px;text-align:center;
+  border-top:1px solid rgba(255,255,255,.08);background:rgba(251,191,36,.05)}
+#emDriverCheck.show{display:flex}
+#emDriverCheck .dc-q{font-size:15px;font-weight:700}
+#emDriverCheck .dc-s{font-size:12.5px;color:var(--muted)}
+.dc-ring{position:relative;width:74px;height:74px}
+.dc-ring svg{transform:rotate(-90deg)}
+.dc-ring .num{position:absolute;inset:0;display:grid;place-items:center;font-size:26px;font-weight:800;font-family:'JetBrains Mono',monospace}
+#imOkBtn{font-family:inherit;font-weight:800;font-size:15px;cursor:pointer;color:#04140a;
+  border:none;border-radius:13px;padding:15px 40px;background:linear-gradient(180deg,#5cf0a8,var(--ok));
+  box-shadow:0 12px 30px rgba(52,211,153,.4)}
+#imOkBtn:hover{filter:brightness(1.05)}
+
+#emFooter{display:none;padding:16px 22px;border-top:1px solid rgba(255,255,255,.08);
+  background:rgba(52,211,153,.05);gap:14px;align-items:center}
+#emFooter.show{display:flex;flex-wrap:wrap}
+.eta-box{display:flex;gap:18px;flex:1}
+.eta{display:flex;align-items:center;gap:10px}
+.eta .ei{font-size:22px}
+.eta .ek{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.eta .ev{font-size:18px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--ok)}
+
+footer.legal{text-align:center;color:var(--faint);font-size:11px;margin-top:22px;line-height:1.6}
+
+/* ---- vehicle picker (connect screen) ---- */
+.veh-picker{margin-top:24px;display:flex;flex-direction:column;gap:10px;width:min(460px,92vw)}
+.veh-picker .vp-label{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);text-align:left;margin-bottom:2px}
+.veh-opt{display:flex;gap:14px;align-items:center;text-align:left;cursor:pointer;
+  padding:13px 16px;border:1px solid var(--brd);border-radius:14px;background:rgba(255,255,255,.03);transition:.15s}
+.veh-opt:hover{border-color:var(--brd-2);background:rgba(255,255,255,.06)}
+.veh-opt.sel{border-color:rgba(42,212,238,.6);background:rgba(42,212,238,.08);
+  box-shadow:0 0 0 1px rgba(42,212,238,.3),0 8px 30px rgba(42,212,238,.12)}
+.veh-opt .vo-ic{font-size:28px;flex:0 0 auto;width:40px;text-align:center}
+.veh-opt .vo-name{font-weight:700;font-size:14px}
+.veh-opt .vo-sub{font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px}
+.veh-opt .vo-drv{font-size:11.5px;color:var(--cyan);margin-top:3px}
+.veh-opt .vo-check{margin-left:auto;width:22px;height:22px;border-radius:50%;border:1px solid var(--brd-2);
+  display:grid;place-items:center;color:transparent;flex:0 0 auto;transition:.15s}
+.veh-opt.sel .vo-check{border-color:var(--cyan);color:#04121a;background:var(--cyan)}
+.veh-opt .vo-check svg{width:13px;height:13px}
+
+/* ---- surround view (cameras) ---- */
+.cams-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--brd)}
+.cam{position:relative;aspect-ratio:16/10;background:#05070d;overflow:hidden}
+.cam>svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.cam .cam-lbl{position:absolute;left:8px;top:7px;font-size:9.5px;font-weight:700;letter-spacing:.12em;
+  font-family:'JetBrains Mono',monospace;color:#cfe;text-shadow:0 1px 3px #000;z-index:3}
+.cam .cam-rec{position:absolute;right:8px;top:7px;display:flex;align-items:center;gap:5px;font-size:9px;
+  font-family:'JetBrains Mono',monospace;color:#ff8298;z-index:3}
+.cam .cam-rec .rd{width:7px;height:7px;border-radius:50%;background:var(--crit);box-shadow:0 0 6px var(--crit);animation:pulse 1.6s infinite}
+.cam .cam-ts{position:absolute;left:8px;bottom:7px;font-size:9px;font-family:'JetBrains Mono',monospace;color:#9fb;text-shadow:0 1px 3px #000;z-index:3}
+.cam .cam-ai{position:absolute;right:8px;bottom:7px;font-size:8.5px;font-family:'JetBrains Mono',monospace;color:var(--cyan);text-shadow:0 1px 3px #000;z-index:3}
+.cam::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
+  background:linear-gradient(180deg,rgba(0,0,0,.28),transparent 22%,transparent 76%,rgba(0,0,0,.4))}
+.cam-scanline{position:absolute;left:0;right:0;height:2px;background:rgba(42,212,238,.22);z-index:2;animation:camscan 4.5s linear infinite}
+@keyframes camscan{0%{top:-2%}100%{top:102%}}
+.cam.flash{animation:camflash .5s ease}
+@keyframes camflash{0%{filter:brightness(2.6) saturate(1.4)}100%{filter:brightness(1)}}
+
+/* captured evidence inside emergency overlay */
+.evidence{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.evidence .ev-cam{position:relative;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.12);
+  aspect-ratio:16/10;background:#05070d;animation:camflash .55s ease}
+.evidence .ev-cam>svg{position:absolute;inset:0;width:100%;height:100%}
+.evidence .ev-cam .ec-l{position:absolute;left:6px;top:5px;font-size:8.5px;font-weight:700;font-family:'JetBrains Mono',monospace;
+  color:#cfe;letter-spacing:.1em;text-shadow:0 1px 2px #000;z-index:2}
+.evidence .ev-cam .ec-t{position:absolute;left:6px;bottom:5px;font-size:8px;font-family:'JetBrains Mono',monospace;color:#9fb;text-shadow:0 1px 2px #000;z-index:2}
+
+/* ---- on-device AI ---- */
+.pill.ai .live-dot{background:#a78bfa;box-shadow:0 0 8px #a78bfa;animation:none}
+.pill.ai.off .live-dot{background:var(--faint);box-shadow:none}
+.ai-brief{margin-top:10px;border:1px solid rgba(167,139,250,.42);border-radius:12px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(124,90,250,.12),rgba(124,90,250,.03))}
+.ai-brief-h{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid rgba(167,139,250,.25);
+  font-size:11px;font-family:'JetBrains Mono',monospace;color:#c4b5fd}
+.ai-badge{font-weight:800;letter-spacing:.06em;color:#0a0716;background:linear-gradient(180deg,#c4b5fd,#a78bfa);
+  border-radius:5px;padding:1px 6px;font-size:10px}
+.ai-cursor{margin-left:auto;color:#a78bfa;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.ai-brief-body{padding:11px 13px;font-size:12.5px;line-height:1.55;white-space:pre-wrap;color:#e9e5fb;
+  font-family:'JetBrains Mono',monospace}
+.ai-brief.done{border-color:rgba(52,211,153,.4)}
+.ai-brief.done .ai-badge{background:linear-gradient(180deg,#7ef0c0,var(--ok))}
+
+/* voice driver check */
+.dc-listen{display:flex;align-items:center;gap:9px;max-width:400px;width:100%;padding:9px 13px;border-radius:11px;
+  border:1px solid var(--brd);background:rgba(255,255,255,.03);font-size:12.5px;color:var(--muted);min-height:40px}
+.dc-listen .mic{width:9px;height:9px;border-radius:50%;background:var(--crit);box-shadow:0 0 8px var(--crit);
+  animation:pulse 1.4s infinite;flex:0 0 auto}
+#dcTranscript{font-style:italic;color:var(--txt)}
+.dc-replies{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center}
+.dc-replies .drl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.dc-replies .btn{padding:7px 12px;font-size:12px}
+
+/* responsive */
+@media(max-width:980px){
+  .dash{grid-template-columns:1fr}
+  .topbar{flex-wrap:wrap}
+  .brand-name{font-size:38px}
+}
+</style>
+</head>
+<body>
+<div class="bg-fx"></div>
+<div class="app-wrap">
+
+<!-- ===================== CONNECT SCREEN ===================== -->
+<div id="connectScreen">
+  <div class="radar">
+    <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+    <div class="shield">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2 4 5v6c0 5 3.4 8.5 8 11 4.6-2.5 8-6 8-11V5l-8-3Z"/>
+        <path d="m9 12 2 2 4-4"/>
+      </svg>
+    </div>
+  </div>
+  <div class="brand-name">AEGIS</div>
+  <div class="brand-sub">Autonomous Vehicle Guardian — continuously watches your position, motion &amp; vehicle health, warns you of danger, and calls for help when you can't.</div>
+
+  <div class="veh-picker" id="vehPicker">
+    <div class="vp-label">Select a vehicle to protect</div>
+    <!-- vehicle options injected by JS -->
+  </div>
+
+  <button class="connect-btn" id="connectBtn" onclick="connect()">
+    <span class="dot"></span> Connect to Vehicle
+  </button>
+  <div id="connectStatus"></div>
+  <div class="connect-note">Demo build · vehicles &amp; sensors simulated</div>
+</div>
+
+<!-- ===================== DASHBOARD ===================== -->
+<div id="app">
+
+  <!-- top bar -->
+  <div class="topbar panel">
+    <div class="logo">
+      <span class="lmark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2 4 5v6c0 5 3.4 8.5 8 11 4.6-2.5 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/>
+        </svg>
+      </span>
+      AEGIS
+    </div>
+    <div class="veh">
+      <b id="tbName">2024 Tesla Model 3 Performance</b>
+      <span id="tbSub">VIN 5YJ3E1EA7PF0X9123 · Midnight Silver</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="pill"><span class="live-dot"></span>Guardian Active</div>
+    <div class="pill gps"><span class="live-dot"></span>GPS Lock · 12 sats</div>
+    <div class="pill ai off" id="aiPill"><span class="live-dot"></span><span id="aiPillTxt">AI…</span></div>
+    <div class="scan-wrap">
+      <div class="ring-mini">
+        <svg width="34" height="34"><circle cx="17" cy="17" r="14" stroke="rgba(255,255,255,.1)" stroke-width="3" fill="none"/>
+        <circle id="scanRing" cx="17" cy="17" r="14" stroke="var(--cyan)" stroke-width="3" fill="none" stroke-linecap="round"/></svg>
+        <div class="num" id="scanNum">30</div>
+      </div>
+      <div class="lbl">Next deep scan<b>every 30s</b></div>
+    </div>
+    <div class="clock" id="clock">--:--:--</div>
+    <button class="icon-btn" id="muteBtn" onclick="toggleMute()" title="Toggle alert sounds">
+      <svg id="muteIc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- demo scenarios -->
+  <div class="demo-bar panel">
+    <span class="dl">Demo Scenarios</span>
+    <button class="btn warn" onclick="triggerHazard()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+      Trigger Hazard
+    </button>
+    <button class="btn crit" onclick="simulateCrash()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m2 8 3 3 4-4 3 4 3-5 4 4 2-2"/><path d="M3 20h18"/></svg>
+      Simulate Crash
+    </button>
+    <button class="btn" onclick="captureSurroundings()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      Capture Surroundings
+    </button>
+    <div class="spacer"></div>
+    <button class="btn ghost" onclick="resetSystem()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      Reset
+    </button>
+  </div>
+
+  <!-- dashboard grid -->
+  <div class="dash">
+    <!-- LEFT -->
+    <div class="col">
+      <!-- MAP -->
+      <div class="panel map-panel">
+        <div style="position:relative">
+          <div id="map"></div>
+          <div class="map-loc">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span id="locText">Locating…</span>
+          </div>
+          <div class="map-hud">
+            <div class="hud-chip"><div class="k">Speed</div><div class="v" id="hudSpeed">0<small> mph</small></div></div>
+            <div class="hud-chip"><div class="k">Heading</div><div class="v" id="hudHeading">N</div></div>
+            <div class="hud-chip"><div class="k">Coordinates</div><div class="v" id="hudCoords" style="font-size:13px">--</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SURROUND VIEW -->
+      <div class="panel">
+        <div class="panel-h">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          <h3>Surround View</h3><span class="tag" id="camTag">4 cams · recording</span>
+        </div>
+        <div class="cams-grid" id="camsGrid"></div>
+      </div>
+
+      <!-- EVENT LOG -->
+      <div class="panel log-panel">
+        <div class="panel-h">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-3 3 3 5-6"/></svg>
+          <h3>Activity Log</h3><span class="tag" id="logTag">live</span>
+        </div>
+        <div id="log"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="col">
+      <!-- TELEMETRY -->
+      <div class="panel">
+        <div class="panel-h">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14 19 7"/><path d="M3 12a9 9 0 0 1 18 0"/><circle cx="12" cy="14" r="1.5"/></svg>
+          <h3>Live Telemetry</h3><span class="tag">1 Hz</span>
+        </div>
+        <div class="telem-top">
+          <div class="speedo">
+            <svg width="148" height="148">
+              <circle cx="74" cy="74" r="62" stroke="rgba(255,255,255,.08)" stroke-width="10" fill="none"/>
+              <circle id="spdRing" cx="74" cy="74" r="62" stroke="url(#spdGrad)" stroke-width="10" fill="none" stroke-linecap="round"/>
+              <defs><linearGradient id="spdGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#2ad4ee"/></linearGradient></defs>
+            </svg>
+            <div class="center">
+              <div class="sv" id="spdVal">0</div>
+              <div class="su">MPH</div>
+              <div class="head" id="spdHead">N · 0°</div>
+            </div>
+          </div>
+          <div class="mini-rings">
+            <div class="mini">
+              <div class="ring-w"><svg width="50" height="50"><circle cx="25" cy="25" r="20" stroke="rgba(255,255,255,.08)" stroke-width="5" fill="none"/><circle id="battRing" cx="25" cy="25" r="20" stroke="var(--ok)" stroke-width="5" fill="none" stroke-linecap="round"/></svg><div class="c" id="battC">78</div></div>
+              <div class="mt"><div class="mk">Battery</div><div class="mv" id="battV">78%</div></div>
+            </div>
+            <div class="mini">
+              <div class="ring-w"><svg width="50" height="50"><circle cx="25" cy="25" r="20" stroke="rgba(255,255,255,.08)" stroke-width="5" fill="none"/><circle id="tempRing" cx="25" cy="25" r="20" stroke="var(--cyan)" stroke-width="5" fill="none" stroke-linecap="round"/></svg><div class="c" id="tempC">42</div></div>
+              <div class="mt"><div class="mk">Motor °C</div><div class="mv" id="tempV">42°</div></div>
+            </div>
+            <div class="mini">
+              <div class="ring-w"><svg width="50" height="50"><circle cx="25" cy="25" r="20" stroke="rgba(255,255,255,.08)" stroke-width="5" fill="none"/><circle id="brakeRing" cx="25" cy="25" r="20" stroke="var(--ok)" stroke-width="5" fill="none" stroke-linecap="round"/></svg><div class="c" id="brakeC">96</div></div>
+              <div class="mt"><div class="mk">Brakes</div><div class="mv">Nominal</div></div>
+            </div>
+            <div class="mini">
+              <div class="ring-w"><svg width="50" height="50"><circle cx="25" cy="25" r="20" stroke="rgba(255,255,255,.08)" stroke-width="5" fill="none"/><circle id="pwrRing" cx="25" cy="25" r="20" stroke="var(--cyan)" stroke-width="5" fill="none" stroke-linecap="round"/></svg><div class="c" id="pwrC">0</div></div>
+              <div class="mt"><div class="mk">Power kW</div><div class="mv" id="pwrV">0</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="tiles">
+          <div class="tile"><div class="tk">Range</div><div class="tv" id="rangeV">241<small> mi</small></div></div>
+          <div class="tile"><div class="tk">Odometer</div><div class="tv" id="odoV">12480<small> mi</small></div></div>
+          <div class="tile"><div class="tk">Cabin</div><div class="tv">21<small> °C</small></div></div>
+        </div>
+        <div class="tg">
+          <div class="tg-cell">
+            <div class="ck">Tire Pressure (psi)</div>
+            <div class="car-top">
+              <div class="tire fl" id="tireFL">35<small>FL</small></div>
+              <div class="tire fr" id="tireFR">35<small>FR</small></div>
+              <div class="tire rl" id="tireRL">34<small>RL</small></div>
+              <div class="tire rr" id="tireRR">35<small>RR</small></div>
+            </div>
+          </div>
+          <div class="tg-cell">
+            <div class="ck">G-Force</div>
+            <div class="gpad"><div id="gDot"></div></div>
+            <div class="gval" id="gVal">0.1 g</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SYSTEM STATUS -->
+      <div class="panel">
+        <div class="panel-h">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <h3>System Health</h3><span class="tag" id="sysTag">all nominal</span>
+        </div>
+        <div class="sys-list" id="sysList"></div>
+      </div>
+
+      <!-- VEHICLE + DRIVER -->
+      <div class="panel">
+        <div class="panel-h">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+          <h3>Owner &amp; Medical Profile</h3><span class="tag" id="pfGarage">garage · 3 cars</span>
+        </div>
+        <div class="info-grid">
+          <div class="info-row"><span class="k">Owner</span><span class="v" id="pfDriver">Jordan Avery</span></div>
+          <div class="info-row"><span class="k">Age / Sex</span><span class="v" id="pfAgeSex">34 · M</span></div>
+          <div class="info-row"><span class="k">Blood type</span><span class="v" id="pfBlood">O+</span></div>
+          <div class="info-row"><span class="k">Allergies</span><span class="v" id="pfAllergy">Penicillin, shellfish</span></div>
+          <div class="info-row"><span class="k">Conditions</span><span class="v" id="pfCond">Asthma, mild hypertension</span></div>
+          <div class="info-row"><span class="k">Medications</span><span class="v" id="pfMeds">Albuterol, Lisinopril</span></div>
+          <div class="info-row"><span class="k">Organ donor</span><span class="v" id="pfDonor">Yes</span></div>
+          <div class="info-row"><span class="k">Insurance</span><span class="v" id="pfIns">BlueShield PPO</span></div>
+          <div class="info-row"><span class="k">Emergency contact</span><span class="v" id="pfContact">Sam Avery (Spouse)</span></div>
+          <div class="info-row"><span class="k">Contact phone</span><span class="v" id="pfPhone">+1 415·555·0142</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="legal">
+    AEGIS Demo — all telemetry, locations, dispatch &amp; emergency contacts are simulated. No real calls are placed.<br>
+    Built for the hackathon · one of several planned guardian features.
+  </footer>
+</div><!-- /#app -->
+
+<!-- ===================== EMERGENCY OVERLAY ===================== -->
+<div id="emergency">
+  <div class="em-card">
+    <div class="em-head">
+      <span class="beacon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+      </span>
+      <div>
+        <h2>AEGIS EMERGENCY RESPONSE</h2>
+        <div class="sub" id="emClock">Collision event detected</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="case">CASE<br><b id="emCase">SF-26-000000</b></div>
+    </div>
+
+    <div class="em-incident">
+      <div class="ii"><div class="ik">Location</div><div class="iv" id="emLoc">--</div></div>
+      <div class="ii"><div class="ik">Severity</div><div class="iv" style="color:var(--crit)">SEVERE</div></div>
+      <div class="ii"><div class="ik">Occupants</div><div class="iv">1 detected</div></div>
+    </div>
+
+    <div id="emBanner">⚠ AUTONOMOUS EMERGENCY PROTOCOL ENGAGED</div>
+
+    <div id="emSteps"></div>
+
+    <!-- driver responsiveness check (AI voice) -->
+    <div id="emDriverCheck">
+      <div class="dc-q" id="dcQ">Can you hear me? Are you hurt?</div>
+      <div class="dc-s">AEGIS is speaking to the driver and listening for a spoken reply…</div>
+      <div class="dc-ring">
+        <svg width="74" height="74"><circle cx="37" cy="37" r="31" stroke="rgba(255,255,255,.1)" stroke-width="5" fill="none"/>
+        <circle id="dcRing" cx="37" cy="37" r="31" stroke="var(--warn)" stroke-width="5" fill="none" stroke-linecap="round"/></svg>
+        <div class="num" id="dcNum">15</div>
+      </div>
+      <div class="dc-listen"><span class="mic"></span><span id="dcTranscript">listening for the driver…</span></div>
+      <div class="dc-replies">
+        <span class="drl">Demo voice reply ▸</span>
+        <button class="btn" onclick="aegisDemoReply('coherent')">🗣 Coherent</button>
+        <button class="btn warn" onclick="aegisDemoReply('distress')">🤕 Distressed</button>
+        <button class="btn ghost" onclick="aegisDemoReply('silent')">🔇 No reply</button>
+      </div>
+      <button id="imOkBtn">I'M OK — CANCEL</button>
+    </div>
+
+    <!-- footer ETA -->
+    <div id="emFooter">
+      <div class="eta-box">
+        <div class="eta"><span class="ei">🚓</span><div><div class="ek">Police ETA</div><div class="ev" id="etaPolice">6:00</div></div></div>
+        <div class="eta"><span class="ei">🚑</span><div><div class="ek">Ambulance ETA</div><div class="ev" id="etaAmb">8:00</div></div></div>
+      </div>
+      <button class="btn" onclick="closeEmergency()">Return to dashboard</button>
+    </div>
+  </div>
+</div>
+
+<!-- hazard banner + toasts -->
+<div id="hazardBanner">
+  <div class="hz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+  <div><div id="hzTitle">Hazard</div><div id="hzMsg">—</div></div>
+</div>
+<div id="toasts"></div>
+
+</div><!-- /app-wrap -->
+
+<script>
+/* ============================================================
+   AEGIS — logic (everything simulated / hard-coded)
+   ============================================================ */
+const $  = (s,el=document)=>el.querySelector(s);
+
+/* ============================================================
+   FLEET — multiple connectable vehicles, each its own driver,
+   medical profile & real street-following loop (SoMa grid, SF).
+   Waypoints below sit on actual intersections; densify() fills
+   them in so the car turns at corners and hugs the road.
+   ============================================================ */
+const SPEED_SCALE = 2.2;                 // demo pacing (px-speed multiplier)
+function segLen(a,b){ return Math.hypot((b[0]-a[0])*111320,(b[1]-a[1])*111320*Math.cos(a[0]*Math.PI/180)); }
+/* interpolate extra points between real intersections (~24 m apart) */
+function densify(waypts, step=24){
+  const out=[];
+  for(let i=0;i<waypts.length;i++){
+    const a=waypts[i], b=waypts[(i+1)%waypts.length];
+    const n=Math.max(1,Math.round(segLen(a,b)/step));
+    for(let k=0;k<n;k++) out.push([a[0]+(b[0]-a[0])*k/n, a[1]+(b[1]-a[1])*k/n]);
+  }
+  return out;
+}
+
+const OWNER = {
+  name:'Jordan Avery', age:34, sex:'M', height:"5'11\"", weight:'78 kg (172 lb)',
+  blood:'O+', allergies:'Penicillin, shellfish', conditions:'Asthma (moderate persistent), mild hypertension',
+  medications:'Albuterol inhaler PRN, Lisinopril 10 mg daily',
+  organDonor:'Yes (driver licence)', insurance:'BlueShield PPO · #BSC-77-204913',
+  physician:'Dr. Lena Park · UCSF Primary Care',
+  contact:'Sam Avery (Spouse)', phone:'+1 415·555·0142',
+  contact2:'Dr. Lena Park (Primary care)', phone2:'+1 415·555·0188',
+  notes:'Wears a medical-alert bracelet; rescue inhaler in the centre console.'
+};
+
+const VEHICLES = [
+  { id:'tesla', icon:'🚗', name:'2024 Tesla Model 3 Performance', vin:'5YJ3E1EA7PF0X9123',
+    color:'Midnight Silver', plate:'8XYZ·123', battery:78, range:241, odo:12480.4,
+    driver:OWNER, agency:'SFPD · Southern Station', hospital:'Zuckerberg SF General (2.4 mi)',
+    streets:['Folsom St & 3rd St','3rd St & Harrison St','Harrison St & 4th St','4th St & Folsom St'],
+    waypts:[[37.78495,-122.39754],[37.7852,-122.39722],[37.78527,-122.39705],[37.78547,-122.39681],[37.78556,-122.39675],[37.78548,-122.39664],[37.78529,-122.39641],[37.78491,-122.39594],[37.7848,-122.39581],[37.78474,-122.39574],[37.78458,-122.39552],[37.7844,-122.39529],[37.78431,-122.39518],[37.78425,-122.3951],[37.7841,-122.3949],[37.78406,-122.39485],[37.78396,-122.39472],[37.78358,-122.39424],[37.78352,-122.39417],[37.78345,-122.39427],[37.78329,-122.39447],[37.78185,-122.39629],[37.78176,-122.3964],[37.78205,-122.39676],[37.78213,-122.39687],[37.78217,-122.39692],[37.78231,-122.39709],[37.7824,-122.3972],[37.78249,-122.39732],[37.78256,-122.3974],[37.78264,-122.39751],[37.7827,-122.39758],[37.78293,-122.39786],[37.78301,-122.39797],[37.78317,-122.39817],[37.78344,-122.39851],[37.78372,-122.39886],[37.7838,-122.39896],[37.78386,-122.39904],[37.78406,-122.39928],[37.78413,-122.39938],[37.78422,-122.39948],[37.78435,-122.39965],[37.78443,-122.39975],[37.78452,-122.39986],[37.78494,-122.40038],[37.78502,-122.40048],[37.78494,-122.40059],[37.78487,-122.40068],[37.78465,-122.40095],[37.78453,-122.40111],[37.78413,-122.4016],[37.78379,-122.40203],[37.78366,-122.4022],[37.78346,-122.40245],[37.78333,-122.40261],[37.78325,-122.40271],[37.78317,-122.4028],[37.78278,-122.4033],[37.78242,-122.40377],[37.78216,-122.40411],[37.78205,-122.40426],[37.78199,-122.40429],[37.78187,-122.40445],[37.78156,-122.40485],[37.78144,-122.40487],[37.78125,-122.40464],[37.78119,-122.40456],[37.78108,-122.40442],[37.7807,-122.40394],[37.78048,-122.40368],[37.78037,-122.40354],[37.78029,-122.40343],[37.78036,-122.40334],[37.78043,-122.40325],[37.78153,-122.40186],[37.78168,-122.40167],[37.78195,-122.40133],[37.78205,-122.4012],[37.78212,-122.40111],[37.78224,-122.40096],[37.78263,-122.40047],[37.78272,-122.40036],[37.78341,-122.39947],[37.78373,-122.39907],[37.78383,-122.39899],[37.78391,-122.39892],[37.78399,-122.3988],[37.78416,-122.39855],[37.78422,-122.39844],[37.78449,-122.3981],[37.78464,-122.39792],[37.78473,-122.39781]] },
+
+  { id:'rivian', icon:'🚙', name:'2025 Rivian R1S', vin:'7FCTGAAA7NN014872',
+    color:'Forest Green', plate:'RIV·884', battery:64, range:198, odo:8302.1,
+    driver:OWNER, agency:'SFPD · Central Station', hospital:'St. Francis Memorial (1.8 mi)',
+    streets:['Market St & 1st St','1st St & Mission St','Mission St & 2nd St','2nd St & Market St'],
+    waypts:[[37.79088,-122.39373],[37.79112,-122.39404],[37.79123,-122.39417],[37.79128,-122.39424],[37.79153,-122.39455],[37.79178,-122.39485],[37.79185,-122.39495],[37.79178,-122.39504],[37.79174,-122.39509],[37.79146,-122.39543],[37.79122,-122.39574],[37.79116,-122.39583],[37.79108,-122.39593],[37.79086,-122.39621],[37.79054,-122.39662],[37.79047,-122.3967],[37.79054,-122.39679],[37.79071,-122.39699],[37.79092,-122.39726],[37.79106,-122.39744],[37.79113,-122.39754],[37.7912,-122.39759],[37.79166,-122.39817],[37.79173,-122.3983],[37.79178,-122.39838],[37.79185,-122.39848],[37.79202,-122.39853],[37.79234,-122.3986],[37.7924,-122.39872],[37.79233,-122.39922],[37.7923,-122.39945],[37.79228,-122.39965],[37.79226,-122.39978],[37.79219,-122.39977],[37.79197,-122.39973],[37.79188,-122.39971],[37.7918,-122.39969],[37.79168,-122.39967],[37.79141,-122.39962],[37.79133,-122.39961],[37.79131,-122.39951],[37.79128,-122.39945],[37.79114,-122.39927],[37.79105,-122.39916],[37.79095,-122.39904],[37.79065,-122.39866],[37.79059,-122.39859],[37.79048,-122.39846],[37.79024,-122.39815],[37.78998,-122.39783],[37.78986,-122.39767],[37.78978,-122.39758],[37.78969,-122.39747],[37.78954,-122.39727],[37.78945,-122.39717],[37.78941,-122.39711],[37.78932,-122.397],[37.78901,-122.39662],[37.78885,-122.39641],[37.78875,-122.39629],[37.78862,-122.39613],[37.78854,-122.39603],[37.78848,-122.39595],[37.78812,-122.3955],[37.78805,-122.39541],[37.78772,-122.395],[37.78739,-122.39459],[37.78732,-122.3945],[37.78739,-122.39442],[37.78767,-122.39406],[37.78771,-122.394],[37.78793,-122.39373],[37.788,-122.39363],[37.78808,-122.39373],[37.78838,-122.3941],[37.78845,-122.39419],[37.7886,-122.39436],[37.78866,-122.39444],[37.78879,-122.39459],[37.78917,-122.39507],[37.78923,-122.39515],[37.7893,-122.39507],[37.78934,-122.39502],[37.78954,-122.39477],[37.78985,-122.39437],[37.78992,-122.39428],[37.78999,-122.39419],[37.79009,-122.39407],[37.79029,-122.39382],[37.7904,-122.39367],[37.79049,-122.39357],[37.79055,-122.39349],[37.79066,-122.39346]] },
+
+  { id:'f150', icon:'🛻', name:'2023 Ford F-150 Lightning', vin:'1FTFW1RG9NF137204',
+    color:'Antimatter Blue', plate:'TRK·201', battery:88, range:268, odo:5120.7,
+    driver:OWNER, agency:'SFPD · Southern Station', hospital:'UCSF Medical Center (3.1 mi)',
+    streets:['Folsom St & 5th St','5th St & Harrison St','Harrison St & 6th St','6th St & Folsom St'],
+    waypts:[[37.78583,-122.40261],[37.78524,-122.40337],[37.78517,-122.40347],[37.78513,-122.40352],[37.78487,-122.40384],[37.78458,-122.40421],[37.78448,-122.40426],[37.7844,-122.40436],[37.78431,-122.40447],[37.784,-122.40487],[37.78363,-122.40534],[37.78356,-122.40544],[37.78323,-122.40586],[37.78309,-122.40604],[37.78289,-122.40629],[37.7828,-122.40641],[37.78274,-122.40649],[37.78281,-122.4066],[37.7829,-122.4067],[37.78318,-122.40705],[37.7833,-122.40719],[37.78353,-122.40748],[37.78366,-122.40764],[37.78387,-122.40789],[37.78391,-122.40795],[37.784,-122.40806],[37.7841,-122.40819],[37.78417,-122.40828],[37.78425,-122.40838],[37.78434,-122.40849],[37.78446,-122.40853],[37.78454,-122.40854],[37.78462,-122.40855],[37.78471,-122.40856],[37.78479,-122.40858],[37.78508,-122.40863],[37.78533,-122.40868],[37.78544,-122.4087],[37.78552,-122.40873],[37.78561,-122.40877],[37.78569,-122.40881],[37.78581,-122.40885],[37.78624,-122.40894],[37.78632,-122.40895],[37.78637,-122.40853],[37.78641,-122.4082],[37.78643,-122.40806],[37.78645,-122.40797],[37.7865,-122.40755],[37.78654,-122.40723],[37.78663,-122.40652],[37.78657,-122.4064],[37.7859,-122.40627],[37.78581,-122.40625],[37.78571,-122.40617],[37.78571,-122.40595],[37.78571,-122.40582],[37.78565,-122.4057],[37.78542,-122.40543],[37.78528,-122.40526],[37.78523,-122.40519],[37.78517,-122.40512],[37.78492,-122.4048],[37.78484,-122.4047],[37.78457,-122.40436],[37.78448,-122.40426],[37.78441,-122.40417],[37.78417,-122.40385],[37.78412,-122.40379],[37.78407,-122.40373],[37.78381,-122.40341],[37.78377,-122.40336],[37.78334,-122.40282],[37.78325,-122.40271],[37.78317,-122.40261],[37.78271,-122.40203],[37.78263,-122.40193],[37.78245,-122.40171],[37.78228,-122.40149],[37.78218,-122.40137],[37.7821,-122.40128],[37.78205,-122.4012],[37.78212,-122.40111],[37.78224,-122.40096],[37.78263,-122.40047],[37.78272,-122.40036],[37.78341,-122.39947],[37.78373,-122.39907],[37.78383,-122.39899],[37.78406,-122.39928],[37.78413,-122.39938],[37.78422,-122.39948],[37.78435,-122.39965],[37.78443,-122.39975],[37.78452,-122.39986],[37.78494,-122.40038],[37.78502,-122.40048],[37.78511,-122.40059],[37.78559,-122.40121],[37.78583,-122.40151],[37.78591,-122.40161],[37.78599,-122.40171],[37.78619,-122.40196],[37.78626,-122.40204],[37.7862,-122.40215],[37.7861,-122.40229],[37.78593,-122.40249],[37.78589,-122.40255]] }
+];
+VEHICLES.forEach(v=>{ v.route = densify(v.waypts); });
+
+let VEHICLE = VEHICLES[0], DRIVER = VEHICLES[0].driver;
+
+const state = {
+  connected:false, muted:false,
+  speed:30, battery:78, motorTemp:42, power:0, range:241, odo:12480.4, brake:96,
+  heading:0, arrowAngle:0, seg:0, t:0, pos:[37.7849,-122.3982],
+  route:[], streets:[],
+  gForce:{x:0,y:0},
+  nextScanAt:0, scanCount:0,
+  emergency:false, emAborted:false,
+  hazardActive:false, hazardUntil:0,
+  map:null, marker:null, trail:null, trailPts:[],
+  loops:[]
+};
+
+/* ---------- helpers ---------- */
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rand =(a,b)=>a+Math.random()*(b-a);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const aborted=()=>state.emAborted;
+
+function bearing(a,b){
+  const φ1=a[0]*Math.PI/180, φ2=b[0]*Math.PI/180, Δλ=(b[1]-a[1])*Math.PI/180;
+  const y=Math.sin(Δλ)*Math.cos(φ2);
+  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+function compass(d){const dirs=['N','NE','E','SE','S','SW','W','NW'];return dirs[Math.round(d/45)%8];}
+function setRing(el,frac){ if(!el)return; const r=el.r.baseVal.value, c=2*Math.PI*r;
+  el.style.strokeDasharray=c; el.style.strokeDashoffset=c*(1-clamp(frac,0,1)); }
+
+/* ---------- audio ---------- */
+let actx;
+function beep(freq=820,dur=.12,type='sine',vol=.05){
+  if(state.muted)return;
+  try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.type=type;o.frequency.value=freq;o.connect(g);g.connect(actx.destination);
+    g.gain.setValueAtTime(vol,actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+dur);
+    o.start();o.stop(actx.currentTime+dur);
+  }catch(e){}
+}
+function alarm(){ beep(760,.18,'square',.06); setTimeout(()=>beep(560,.2,'square',.06),190); }
+function toggleMute(){
+  state.muted=!state.muted;
+  $('#muteBtn').style.color=state.muted?'var(--crit)':'';
+  $('#muteIc').innerHTML = state.muted
+    ? '<path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="m23 9-6 6"/><path d="m17 9 6 6"/>'
+    : '<path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/>';
+}
+
+/* ---------- log + toast + banner ---------- */
+function log(msg,level='info'){
+  const el=$('#log'); if(!el)return;
+  const t=new Date().toLocaleTimeString('en-US',{hour12:false});
+  const row=document.createElement('div');
+  row.className='log-row log-'+level;
+  row.innerHTML=`<span class="log-time">${t}</span><span class="log-dot"></span><span class="log-msg">${msg}</span>`;
+  el.prepend(row);
+  while(el.children.length>60) el.lastChild.remove();
+}
+const TICONS={ok:'<path d="m20 6-11 11-5-5"/>',warn:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',crit:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'};
+function toast(title,msg,level='info',ttl=4800){
+  const wrap=$('#toasts'); const el=document.createElement('div');
+  el.className='toast toast-'+level;
+  el.innerHTML=`<div class="toast-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${TICONS[level]}</svg></div>
+    <div><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+  wrap.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add('show'));
+  setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),350);},ttl);
+}
+let bannerTimer;
+function showBanner(title,msg){
+  $('#hzTitle').textContent=title; $('#hzMsg').textContent=msg;
+  const b=$('#hazardBanner'); b.classList.add('show');
+  clearTimeout(bannerTimer); bannerTimer=setTimeout(()=>b.classList.remove('show'),6500);
+}
+
+/* ---------- connect ---------- */
+/* ============================================================
+   ON-DEVICE AI  (local Ollama via /ai proxy · offline fallback)
+   Powers: spoken driver check-in + responder briefing.
+   ============================================================ */
+const AI={available:false,source:'offline',model:null};
+function aiSrcLabel(source,model){
+  if(source==='ollama') return 'on-device · '+(model||AI.model||'llama3.2');
+  if(source==='cloud')  return 'cloud · '+(model||AI.model||'claude');
+  return 'offline template';
+}
+async function aiInit(){
+  try{ const r=await fetch('/api/ai-status'); const j=await r.json(); AI.available=!!j.available; AI.source=j.source||'offline'; AI.model=j.model; }
+  catch(e){ AI.available=false; AI.source='offline'; AI.model=null; }
+  const txt=$('#aiPillTxt'), pill=$('#aiPill');
+  const label = AI.source==='ollama' ? ('On-device AI · '+(AI.model||'llama3.2'))
+              : AI.source==='cloud'  ? ('Cloud AI · '+(AI.model||'claude'))
+              : 'AI offline · templates';
+  if(txt) txt.textContent = label;
+  if(pill) pill.classList.toggle('off',!AI.available);
+  log(AI.source==='ollama' ? ('On-device AI ready — '+(AI.model||'llama3.2')+' · nothing leaves this vehicle')
+     : AI.source==='cloud' ? ('Cloud AI ready — '+(AI.model||'claude'))
+     : 'No live AI detected — using built-in offline templates', AI.available?'ok':'warn');
+}
+async function aiGenerate(prompt,system){
+  try{
+    const r=await fetch('/api/ai-generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,system})});
+    const j=await r.json();
+    if(j.ok && j.response && j.response.trim().length>10) return {text:j.response.trim(),source:j.source||'ollama',model:j.model};
+  }catch(e){}
+  return null;
+}
+async function typeInto(el,text,speed=8){ if(!el)return; el.textContent=''; for(let i=0;i<text.length;i++){ el.textContent+=text[i]; if(i%2===0) await sleep(speed); } }
+
+/* --- voice out (offline TTS) --- */
+function speak(text){
+  try{ if(!('speechSynthesis' in window) || state.muted) return;
+    const u=new SpeechSynthesisUtterance(text); u.rate=1.02; u.pitch=1; u.volume=1;
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+  }catch(e){}
+}
+/* --- voice in (best-effort STT; demo buttons guarantee the flow) --- */
+function startListen(onPartial){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR) return ()=>{};
+  let rec; try{ rec=new SR(); }catch(e){ return ()=>{}; }
+  rec.lang='en-US'; rec.interimResults=true; rec.continuous=true;
+  rec.onresult=e=>{ let t=''; for(const r of e.results) t+=r[0].transcript+' '; onPartial(t.trim()); };
+  rec.onerror=()=>{};
+  try{ rec.start(); }catch(e){}
+  return ()=>{ try{ rec.stop(); }catch(e){} };
+}
+
+/* --- AI judges the driver's reply: ok / distress / unresponsive --- */
+async function classifyReply(transcript){
+  const t=(transcript||'').trim();
+  if(AI.available){
+    const out=await aiGenerate(
+`The car detected a severe crash and asked the driver: "Can you hear me? Are you hurt?".
+The driver's spoken reply was: "${t||'(silence — no words detected)'}".
+Classify the driver's condition. Respond with ONLY one JSON object and nothing else:
+{"status":"ok|distress|unresponsive","reason":"max 8 words","say":"one short calm sentence AEGIS should speak back"}
+Rules: empty/garbled/no real words => "unresponsive". Hurt, in pain, confused, slurred, trapped, bleeding, dizzy, or asking for help => "distress". Clearly fine/coherent => "ok".`,
+`You are AEGIS, a calm in-car emergency AI triaging a crashed driver. Output strict JSON only, no prose.`);
+    if(out){ const v=parseVerdict(out.text); if(v) return v; }
+  }
+  return heuristicVerdict(t);
+}
+function parseVerdict(s){
+  try{ const m=s.match(/\{[\s\S]*\}/); if(!m) return null; const j=JSON.parse(m[0]);
+    if(!['ok','distress','unresponsive'].includes(j.status)) return null;
+    return {status:j.status, reason:(j.reason||'').slice(0,60), say:(j.say||'').slice(0,120), source:'ollama'};
+  }catch(e){ return null; }
+}
+function heuristicVerdict(t){
+  if(!t) return {status:'unresponsive',reason:'no audible response',say:'',source:'offline'};
+  if(/(help|hurt|can'?t|cant|chest|bleed|pain|trapped|stuck|broke|dizzy|ow|aah|leg|arm|head)/i.test(t))
+    return {status:'distress',reason:'reply indicates injury',say:'Stay still — help is already on the way.',source:'offline'};
+  return {status:'ok',reason:'coherent reply',say:"Okay, I'm glad you're responsive.",source:'offline'};
+}
+
+/* ---------- vehicle picker ---------- */
+function initVehiclePicker(){
+  const p=$('#vehPicker'); if(!p) return;
+  const lbl=p.querySelector('.vp-label'); if(lbl) lbl.textContent=OWNER.name+"'s garage · select a vehicle to protect";
+  VEHICLES.forEach((v,i)=>{
+    const o=document.createElement('div');
+    o.className='veh-opt'+(i===0?' sel':''); o.dataset.id=v.id;
+    o.onclick=()=>selectVehicle(v.id);
+    o.innerHTML=`<div class="vo-ic">${v.icon}</div>
+      <div><div class="vo-name">${v.name}</div>
+        <div class="vo-sub">VIN ${v.vin} · ${v.plate}</div>
+        <div class="vo-drv">${v.color} · ${v.battery}% battery · ${v.range} mi range</div></div>
+      <div class="vo-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>`;
+    p.appendChild(o);
+  });
+}
+function selectVehicle(id){
+  VEHICLE=VEHICLES.find(v=>v.id===id)||VEHICLES[0]; DRIVER=VEHICLE.driver;
+  document.querySelectorAll('.veh-opt').forEach(o=>o.classList.toggle('sel',o.dataset.id===id));
+  beep(720,.05,'sine',.03);
+}
+
+/* ---------- connect ---------- */
+function connect(){
+  $('#connectBtn').disabled=true;
+  $('#connectScreen').classList.add('connecting');
+  const steps=['Establishing encrypted link…','Authenticating VIN '+VEHICLE.vin.slice(0,9)+'…','Syncing 142 sensors…',
+    'Calibrating GPS &amp; IMU…','Secure link established ✓'];
+  let i=0; const sEl=$('#connectStatus');
+  const iv=setInterval(()=>{
+    sEl.innerHTML=steps[i]; beep(620+i*70,.07,'sine',.04); i++;
+    if(i>=steps.length){clearInterval(iv); setTimeout(finishConnect,650);}
+  },620);
+}
+function finishConnect(){
+  if(state.connected) return;        // guard: never double-init (would re-create the map)
+  state.connected=true;
+  applyVehicle(VEHICLE);
+  $('#connectScreen').style.display='none';
+  $('#app').classList.add('live');
+  buildSysList();
+  buildCameras();
+  initMap();
+  renderTelemetry();
+  startLoops();
+  scheduleScan();
+  aiInit();
+  toast('Vehicle connected','AEGIS is now monitoring '+VEHICLE.name+'.','ok');
+  log('AEGIS guardian online — continuous monitoring active for '+VEHICLE.name,'ok');
+  log('Driver profile & medical data loaded for '+DRIVER.name,'info');
+}
+/* load the selected vehicle's baseline, route & profile into the UI */
+function applyVehicle(v){
+  VEHICLE=v; DRIVER=v.driver;
+  state.route=v.route; state.streets=v.streets;
+  state.seg=0; state.t=0; state.pos=v.route[0].slice(); state.trailPts=[];
+  state.arrowAngle=bearing(v.route[0],v.route[1]); state.heading=(state.arrowAngle%360+360)%360;
+  state.battery=v.battery; state.range=v.range; state.odo=v.odo;
+  state.speed=30; state.motorTemp=42; state.power=0; state.brake=96;
+  $('#tbName').textContent=v.name;
+  $('#tbSub').textContent='VIN '+v.vin+' · '+v.color;
+  $('#pfDriver').textContent=DRIVER.name;   $('#pfBlood').textContent=DRIVER.blood;
+  $('#pfAgeSex').textContent=DRIVER.age+' · '+DRIVER.sex;
+  $('#pfAllergy').textContent=DRIVER.allergies; $('#pfCond').textContent=DRIVER.conditions;
+  $('#pfMeds').textContent=DRIVER.medications; $('#pfDonor').textContent=DRIVER.organDonor;
+  $('#pfIns').textContent=DRIVER.insurance;
+  $('#pfContact').textContent=DRIVER.contact; $('#pfPhone').textContent=DRIVER.phone;
+}
+
+/* ---------- map ---------- */
+function initMap(){
+  if(state.map){ try{ state.map.remove(); }catch(e){} state.map=null; state.marker=null; state.trail=null; }
+  try{
+    const start=state.route[0];
+    const map=L.map('map',{zoomControl:false,attributionControl:false,dragging:true}).setView(start,16);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:20,subdomains:'abcd'}).addTo(map);
+    state.map=map;
+    L.polyline([...state.route,state.route[0]],{color:'#2ad4ee',weight:2,opacity:.22,dashArray:'4 6'}).addTo(map); // planned road path
+    state.trail=L.polyline([],{color:'#2ad4ee',weight:4,opacity:.7}).addTo(map);
+    const icon=L.divIcon({className:'',html:'<div class="car-pin"><div class="car-pulse"></div><div class="car-arrow"></div></div>',iconSize:[40,40],iconAnchor:[20,20]});
+    state.marker=L.marker(start,{icon}).addTo(map);
+    setTimeout(()=>map.invalidateSize(),250);
+  }catch(e){
+    const m=$('#map'); m.innerHTML='<div class="map-fb">Live map unavailable (offline) — telemetry still active</div>';
+  }
+}
+
+/* ---------- movement ---------- */
+function moveTick(){
+  if(!state.connected) return;
+  if(state.emergency && !state.emAborted) return;       // car stopped during emergency
+  const R=state.route; if(!R||R.length<2) return;
+  // advance by real distance so dense segments move at a constant speed
+  let a=R[state.seg], b=R[(state.seg+1)%R.length];
+  let adv=state.speed*0.447*0.12*SPEED_SCALE;            // metres this 120 ms tick
+  state.t += adv/Math.max(1,segLen(a,b));
+  while(state.t>=1){
+    state.t-=1; state.seg=(state.seg+1)%R.length;
+    a=R[state.seg]; b=R[(state.seg+1)%R.length];
+  }
+  const lat=a[0]+(b[0]-a[0])*state.t, lng=a[1]+(b[1]-a[1])*state.t;
+  state.pos=[lat,lng];
+  // smooth, shortest-arc heading — no more 340° spin when the road turns
+  const tgt=bearing(a,b);
+  let d=((tgt-state.arrowAngle+540)%360)-180;
+  state.arrowAngle += d*0.2;
+  state.heading=(state.arrowAngle%360+360)%360;
+  if(state.marker){
+    state.marker.setLatLng([lat,lng]);
+    const arrow=document.querySelector('.car-arrow');
+    if(arrow) arrow.style.transform=`rotate(${state.arrowAngle}deg)`;
+    state.trailPts.push([lat,lng]); if(state.trailPts.length>160) state.trailPts.shift();
+    state.trail.setLatLngs(state.trailPts);
+    if(state.map) state.map.setView([lat,lng],state.map.getZoom(),{animate:false}); // steady follow
+  }
+  $('#hudSpeed').innerHTML=Math.round(state.speed)+'<small> mph</small>';
+  $('#hudHeading').textContent=compass(state.heading);
+  $('#hudCoords').textContent=lat.toFixed(5)+', '+lng.toFixed(5);
+  const sp=state.seg/R.length, S=state.streets;
+  $('#locText').textContent=(S&&S.length?S[Math.floor(sp*S.length)%S.length]:'San Francisco')+', San Francisco';
+}
+
+/* ---------- telemetry ---------- */
+function updateTelemetry(){
+  if(!state.connected) return;
+  if(state.emergency && !state.emAborted) return;
+  if(state.hazardActive && Date.now()>state.hazardUntil) state.hazardActive=false;
+  if(!state.hazardActive) state.speed=clamp(state.speed+rand(-3,3),18,52);
+  state.power=clamp(Math.round(state.speed*3.4+rand(-18,18)),0,260);
+  state.motorTemp=clamp(state.motorTemp+rand(-1,1.3),34,76);
+  state.battery=clamp(state.battery-0.03,0,100);
+  state.range=Math.round(state.battery*3.1);
+  state.odo+=state.speed/3600;
+  state.gForce={x:rand(-0.22,0.22),y:rand(-0.18,0.28)};
+  renderTelemetry();
+}
+function renderTelemetry(){
+  $('#spdVal').textContent=Math.round(state.speed);
+  $('#spdHead').textContent=compass(state.heading)+' · '+Math.round(state.heading)+'°';
+  setRing($('#spdRing'),state.speed/120);
+  $('#battC').textContent=Math.round(state.battery); $('#battV').textContent=Math.round(state.battery)+'%';
+  setRing($('#battRing'),state.battery/100);
+  $('#tempC').textContent=Math.round(state.motorTemp); $('#tempV').textContent=Math.round(state.motorTemp)+'°';
+  setRing($('#tempRing'),state.motorTemp/120);
+  setRing($('#brakeRing'),state.brake/100);
+  $('#pwrC').textContent=state.power; $('#pwrV').textContent=state.power;
+  setRing($('#pwrRing'),state.power/260);
+  $('#rangeV').innerHTML=state.range+'<small> mi</small>';
+  $('#odoV').innerHTML=Math.round(state.odo)+'<small> mi</small>';
+  const dot=$('#gDot'); if(dot) dot.style.transform=`translate(${state.gForce.x*38}px,${-state.gForce.y*38}px)`;
+  $('#gVal').textContent=Math.hypot(state.gForce.x,state.gForce.y).toFixed(1)+' g';
+}
+
+/* ---------- system health ---------- */
+const SYS=[
+  ['Powertrain & battery','OK','ok'],['Brakes & ABS','OK','ok'],['Tire pressure','OK','ok'],
+  ['Collision sensors','ARMED','ok'],['GPS / navigation','LOCKED','ok'],
+  ['Driver monitoring','ACTIVE','ok'],['Emergency uplink (LTE)','READY','ok']
+];
+function buildSysList(){
+  const el=$('#sysList'); el.innerHTML='';
+  SYS.forEach(([nm,st,lv])=>{
+    const r=document.createElement('div'); r.className='sys-row';
+    r.innerHTML=`<span class="sdot ${lv}"></span><span class="nm">${nm}</span><span class="st ${lv}">${st}</span>`;
+    el.appendChild(r);
+  });
+}
+
+/* ---------- loops + 30s deep scan ---------- */
+function startLoops(){
+  state.loops.push(setInterval(moveTick,120));
+  state.loops.push(setInterval(()=>{ updateTelemetry(); scanTick(); tickClock(); updateCamTimes(); },1000));
+  tickClock();
+}
+
+/* ============================================================
+   SURROUND VIEW — hardcoded 360° dashcam frames (FRONT/REAR/
+   LEFT/RIGHT). Captured on demand and auto-attached as visual
+   evidence during a crash. Pure inline SVG → works fully offline.
+   ============================================================ */
+const CAMS=['FRONT','REAR','LEFT','RIGHT'];
+function camScene(type){
+  const defs=`<defs>
+    <linearGradient id="cgSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b1426"/><stop offset="1" stop-color="#05070d"/></linearGradient>
+    <linearGradient id="cgRoad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0c0f15"/><stop offset="1" stop-color="#1b212b"/></linearGradient></defs>`;
+  // isolated night scenes — deliberately EMPTY (no other vehicles, no pedestrians),
+  // consistent with the "0 vehicles · 0 pedestrians · isolated location" detection.
+  let s='';
+  if(type==='FRONT'){
+    s=`<rect width="160" height="58" fill="url(#cgSky)"/>
+       <polygon points="0,58 160,58 160,100 0,100" fill="url(#cgRoad)"/>
+       <polygon points="74,58 86,58 120,100 40,100" fill="#0c0f15"/>
+       <rect x="0" y="30" width="26" height="28" fill="#0a0e16"/><rect x="134" y="26" width="26" height="32" fill="#0a0e16"/>
+       <rect x="6" y="36" width="4" height="5" fill="#3a4a63"/><rect x="14" y="40" width="4" height="5" fill="#2a3850"/>
+       <rect x="140" y="32" width="4" height="5" fill="#3a4a63"/><rect x="148" y="38" width="4" height="5" fill="#2a3850"/>
+       <g fill="#39465a"><polygon points="79,61 81,61 81,65 79,65"/><polygon points="78,69 82,69 81,75 77,75"/><polygon points="76,81 82,81 81,89 74,89"/><polygon points="73,92 82,92 81,100 70,100"/></g>
+       <circle cx="30" cy="20" r="6" fill="#ffd27a" opacity=".12"/><circle cx="128" cy="16" r="6" fill="#ffd27a" opacity=".12"/>
+       <circle cx="30" cy="20" r="2.4" fill="#ffd27a" opacity=".85"/><circle cx="128" cy="16" r="2.4" fill="#ffd27a" opacity=".85"/>`;
+  } else if(type==='REAR'){
+    s=`<rect width="160" height="58" fill="url(#cgSky)"/>
+       <polygon points="0,58 160,58 160,100 0,100" fill="url(#cgRoad)"/>
+       <polygon points="74,58 86,58 120,100 40,100" fill="#0c0f15"/>
+       <rect x="0" y="28" width="30" height="30" fill="#0a0e16"/><rect x="130" y="30" width="30" height="28" fill="#0a0e16"/>
+       <rect x="8" y="34" width="4" height="5" fill="#2a3850"/><rect x="138" y="36" width="4" height="5" fill="#3a4a63"/>
+       <g fill="#39465a"><polygon points="79,61 81,61 81,65 79,65"/><polygon points="78,69 82,69 81,75 77,75"/><polygon points="76,81 82,81 81,89 74,89"/></g>
+       <circle cx="26" cy="18" r="6" fill="#ffd27a" opacity=".1"/><circle cx="132" cy="22" r="6" fill="#ffd27a" opacity=".1"/>
+       <circle cx="26" cy="18" r="2.2" fill="#ffd27a" opacity=".8"/><circle cx="132" cy="22" r="2.2" fill="#ffd27a" opacity=".8"/>`;
+  } else if(type==='LEFT'){
+    s=`<rect width="160" height="46" fill="url(#cgSky)"/><rect y="46" width="160" height="54" fill="url(#cgRoad)"/>
+       <rect x="0" y="6" width="160" height="40" fill="#0a0e16"/>
+       <g fill="#243348">${[10,34,58,82,106,130].map(x=>`<rect x="${x}" y="14" width="10" height="12"/>`).join('')}</g>
+       <g fill="#3a4a63" opacity=".7">${[34,106].map(x=>`<rect x="${x}" y="14" width="10" height="12"/>`).join('')}</g>
+       <rect y="50" width="160" height="3" fill="#222a36"/><rect y="53" width="160" height="7" fill="#10141b" opacity=".5"/>
+       <rect x="44" y="18" width="2" height="32" fill="#1a2230"/><circle cx="45" cy="18" r="7" fill="#ffd27a" opacity=".1"/><circle cx="45" cy="18" r="2" fill="#ffd27a" opacity=".85"/>`;
+  } else {
+    s=`<rect width="160" height="46" fill="url(#cgSky)"/><rect y="46" width="160" height="54" fill="url(#cgRoad)"/>
+       <rect x="0" y="4" width="160" height="42" fill="#0a0e16"/>
+       <rect x="20" y="20" width="46" height="26" fill="#141a24"/><rect x="24" y="24" width="38" height="18" fill="#1d2735" opacity=".6"/>
+       <rect x="96" y="18" width="44" height="28" fill="#16131c"/><rect x="100" y="22" width="36" height="20" fill="#241a2a" opacity=".6"/>
+       <rect y="50" width="160" height="3" fill="#222a36"/><rect y="53" width="160" height="7" fill="#10141b" opacity=".5"/>
+       <rect x="118" y="18" width="2" height="32" fill="#1a2230"/><circle cx="119" cy="18" r="7" fill="#ffd27a" opacity=".1"/><circle cx="119" cy="18" r="2" fill="#ffd27a" opacity=".8"/>`;
+  }
+  return `<svg viewBox="0 0 160 100" preserveAspectRatio="none">${defs}${s}</svg>`;
+}
+function buildCameras(){
+  const g=$('#camsGrid'); if(!g) return; g.innerHTML='';
+  CAMS.forEach(type=>{
+    const d=document.createElement('div'); d.className='cam';
+    d.innerHTML=`${camScene(type)}
+      <div class="cam-scanline"></div>
+      <span class="cam-lbl">${type} CAM</span>
+      <span class="cam-rec"><span class="rd"></span>REC</span>
+      <span class="cam-ts" data-ts>--:--:--</span>
+      <span class="cam-ai">AI: clear</span>`;
+    g.appendChild(d);
+  });
+}
+function updateCamTimes(){
+  const t=new Date().toLocaleTimeString('en-US',{hour12:false});
+  document.querySelectorAll('#camsGrid [data-ts]').forEach(e=>e.textContent=t);
+}
+function captureSurroundings(){
+  if(!state.connected) return;
+  beep(1200,.05,'sine',.04); setTimeout(()=>beep(1500,.06,'sine',.04),70);
+  document.querySelectorAll('.cam').forEach(c=>{ c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); });
+  toast('Surroundings captured','4-camera 360° snapshot saved to the secure event vault.','info');
+  log('Surround snapshot captured — FRONT / REAR / LEFT / RIGHT · 4 frames secured to event vault','ok');
+}
+function evidenceHTML(){
+  const t=new Date().toLocaleTimeString('en-US',{hour12:false});
+  return `<div class="evidence">`+CAMS.map(type=>
+    `<div class="ev-cam">${camScene(type)}<span class="ec-l">${type}</span><span class="ec-t">${t}</span></div>`).join('')+`</div>`;
+}
+function tickClock(){ $('#clock').textContent=new Date().toLocaleTimeString('en-US',{hour12:false}); }
+function scheduleScan(){ state.nextScanAt=Date.now()+30000; }
+function scanTick(){
+  if(!state.connected||(state.emergency&&!state.emAborted)) return;
+  const remain=Math.max(0,state.nextScanAt-Date.now());
+  $('#scanNum').textContent=Math.ceil(remain/1000);
+  setRing($('#scanRing'),remain/30000);
+  if(remain<=0){ deepScan(); scheduleScan(); }
+}
+function deepScan(){
+  state.scanCount++;
+  beep(900,.06,'sine',.03);
+  log(`Deep scan #${state.scanCount} — position, motion & 142 sensors verified · all nominal`,'ok');
+}
+
+/* ---------- hazards ---------- */
+const HAZARDS=[
+  {t:'Hard braking ahead',m:'Vehicle 40 m ahead braking sharply — increasing following distance.',slow:18},
+  {t:'Pedestrian crossing',m:'Pedestrian entering the crosswalk to your right — please slow down.',slow:24},
+  {t:'Low traction detected',m:'Possible black ice on the road — easing power, drive with caution.',slow:14},
+  {t:'Driver drowsiness',m:'Signs of fatigue detected — consider a break at the next rest stop.',slow:0},
+  {t:'Sharp curve ahead',m:'Tight bend in 200 m — advising you slow to 25 mph.',slow:10}
+];
+function triggerHazard(){
+  if(!state.connected || state.emergency) return;
+  const h=HAZARDS[Math.floor(Math.random()*HAZARDS.length)];
+  if(h.slow){ state.hazardActive=true; state.hazardUntil=Date.now()+5000; state.speed=Math.max(6,state.speed-h.slow); }
+  showBanner('⚠ '+h.t,h.m);
+  toast(h.t,h.m,'warn');
+  log('HAZARD — '+h.t+': '+h.m,'warn');
+  // briefly mark a system amber
+  flashSys('Collision sensors','HAZARD','warn');
+  alarm();
+}
+function flashSys(name,txt,lv){
+  const rows=document.querySelectorAll('.sys-row');
+  rows.forEach(r=>{
+    if(r.querySelector('.nm').textContent===name){
+      const dot=r.querySelector('.sdot'), st=r.querySelector('.st');
+      const oc=dot.className, ot=st.textContent, os=st.className;
+      dot.className='sdot '+lv; st.className='st '+lv; st.textContent=txt;
+      $('#sysTag').textContent='hazard'; $('#sysTag').style.color='var(--warn)';
+      setTimeout(()=>{dot.className=oc;st.className=os;st.textContent=ot;$('#sysTag').textContent='all nominal';$('#sysTag').style.color='';},5500);
+    }
+  });
+}
+
+/* ============================================================
+   CRASH → AUTONOMOUS EMERGENCY DISPATCH
+   ============================================================ */
+function simulateCrash(){
+  if(!state.connected || state.emergency) return;
+  state._impactSpeed=Math.max(18,Math.round(state.speed));   // capture pre-impact speed/heading for the reports
+  state._impactHeading=compass(state.heading);
+  state._driverStatus=null;
+  state.emergency=true; state.emAborted=false;
+  state.speed=0; state.power=0;
+  state.gForce={x:rand(-.6,.6),y:.95};
+  renderTelemetry();
+  $('#gVal').textContent='8.4 g';
+  const dot=$('#gDot'); if(dot) dot.style.transform='translate(0,-40px)';
+  alarm(); setTimeout(alarm,380); setTimeout(alarm,760);
+
+  // incident details
+  const caseId='SF-26-'+String(Math.floor(100000+Math.random()*899999));
+  $('#emCase').textContent=caseId;
+  $('#emLoc').textContent=state.pos[0].toFixed(4)+', '+state.pos[1].toFixed(4);
+  $('#emClock').textContent='Collision detected · '+new Date().toLocaleTimeString('en-US',{hour12:false});
+  $('#emBanner').classList.remove('show');
+  $('#emFooter').classList.remove('show');
+  $('#emSteps').innerHTML='';
+  $('#emergency').classList.add('show');
+
+  log('⚠ IMPACT DETECTED — 8.4 g deceleration · airbags deployed · vehicle immobilized','crit');
+  toast('Collision detected','AEGIS is assessing the situation…','crit',6000);
+  runEmergency(caseId);
+}
+
+const ICONS={spin:'<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg>',
+  warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>'};
+function emStep(id,title,desc,level,status,extra=''){
+  const wrap=$('#emSteps'); let el=document.getElementById('step-'+id);
+  if(!el){ el=document.createElement('div'); el.id='step-'+id; wrap.appendChild(el); }
+  el.className='em-step em-'+level+' '+status;
+  const ic = status==='active'?ICONS.spin : (level==='crit'?ICONS.warn:ICONS.check);
+  el.innerHTML=`<div class="em-ic">${ic}</div><div class="em-body"><div class="em-title">${title}</div><div class="em-desc">${desc}</div>${extra}</div>`;
+  el.scrollIntoView({behavior:'smooth',block:'nearest'});
+  beep(level==='crit'?520:780,.09,'sine',.045);
+}
+
+async function runEmergency(caseId){
+  emStep('impact','Impact detected','8.4 g front-left collision · airbags deployed · vehicle immobilized.','crit','done');
+  await sleep(950); if(aborted())return;
+
+  // driver responsiveness — AEGIS speaks to the driver & the AI judges the reply
+  emStep('driver','AEGIS is speaking to the driver','Asking “can you hear me? are you hurt?” and listening for a spoken reply…','warn','active');
+  const verdict=await aiDriverCheck(15);
+  if(verdict.status==='ok'){ driverSafe(verdict); return; }
+  const distress=(verdict.status==='distress');
+  if(verdict.say) speak(verdict.say);
+  state._driverStatus = distress
+    ? `Responded but injured/distressed — said: "${verdict.transcript}" (${verdict.reason})`
+    : 'No intelligible response — possibly unconscious/incapacitated';
+  emStep('driver',
+    distress?'Driver responded — injured & in distress':'Driver unresponsive',
+    distress
+      ? `Voice reply: “${verdict.transcript}”. AEGIS assessment: ${verdict.reason}. Escalating immediately.`
+      : 'No intelligible response after 15 seconds — driver may be incapacitated.',
+    'crit','done');
+  log(distress?('Driver reply assessed as DISTRESS by '+(verdict.source==='ollama'?(AI.model||'AI'):'offline AI')+' — escalating'):'Driver unresponsive — escalating','crit');
+  await sleep(500); if(aborted())return;
+
+  // surroundings
+  emStep('scan','Scanning surroundings for help','360° camera + radar sweep within 250 m…','info','active');
+  await sleep(1900); if(aborted())return;
+  emStep('scan','No bystanders nearby','0 vehicles within 250 m · 0 pedestrians detected · isolated location.','crit','done');
+  await sleep(600); if(aborted())return;
+
+  // capture 360° visual evidence for responders
+  emStep('evidence','Capturing surroundings as evidence','4-camera 360° snapshot + nearby-plate recognition…','info','active');
+  document.querySelectorAll('.cam').forEach(c=>{ c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); });
+  beep(1200,.05,'sine',.04);
+  await sleep(1700); if(aborted())return;
+  emStep('evidence','360° evidence secured','Crash imagery captured & attached to the case file — transmitting to responders.','ok','done',evidenceHTML());
+  toast('Evidence captured','360° crash imagery attached to case '+caseId,'info',6000);
+  log('360° surround imagery captured & attached to case '+caseId,'crit');
+  await sleep(800); if(aborted())return;
+
+  $('#emBanner').classList.add('show');
+  log('Driver cannot self-rescue + no help nearby → autonomous emergency protocol ENGAGED','crit');
+  await sleep(700); if(aborted())return;
+
+  // ⭐ AEGIS AI responder briefing — on-device LLM reads crash + medical data
+  const analysing = AI.source==='ollama' ? ('On-device '+(AI.model||'llama3.2')+' is analysing the impact vector & medical profile…')
+                  : AI.source==='cloud' ? ('Cloud AI ('+(AI.model||'claude')+') is analysing the impact vector & medical profile…')
+                  : 'Compiling responder briefing from crash + medical data…';
+  emStep('brief','AEGIS AI · drafting responder briefing', analysing, 'info','active',
+    `<div class="ai-brief"><div class="ai-brief-h"><span class="ai-badge">AI</span><span>${aiSrcLabel(AI.source,AI.model)}</span><span class="ai-cursor">▍</span></div><div class="ai-brief-body" id="aiBriefText"></div></div>`);
+  beep(880,.05,'sine',.035);
+  const brief=await generateBriefing();
+  await typeInto($('#aiBriefText'), brief.text, 6);
+  if(aborted())return;
+  const bs=document.getElementById('step-brief');
+  if(bs){ bs.classList.remove('em-info'); bs.classList.add('em-ok','done');
+    bs.querySelector('.em-ic').innerHTML=ICONS.check;
+    bs.querySelector('.em-title').textContent='AEGIS AI · responder briefing ready';
+    bs.querySelector('.em-desc').textContent='Auto-generated brief transmitted to all responding units with the live data feed.';
+    const b=bs.querySelector('.ai-brief'); if(b) b.classList.add('done');
+    const src=bs.querySelector('.ai-brief-h span:nth-child(2)'); if(src) src.textContent = aiSrcLabel(brief.source,brief.model);
+    const cur=bs.querySelector('.ai-cursor'); if(cur) cur.remove();
+  }
+  toast('AI briefing sent', (brief.source==='offline'?'Offline':(brief.source==='cloud'?'Cloud AI':'On-device AI'))+' brief transmitted to responders.','info',6000);
+  log('AEGIS AI responder briefing generated & transmitted ('+aiSrcLabel(brief.source,brief.model)+')','crit');
+  await sleep(800); if(aborted())return;
+
+  // police / 911
+  emStep('police','Contacting emergency services (911)','Placing automated data call to Public Safety…','crit','active');
+  await sleep(1700); if(aborted())return;
+  emStep('police','Police & fire dispatched','Units en route — transmitting live location, crash data & vehicle info.','ok','done',
+    `<div class="dispatch-card">
+       <div class="dc-row"><span class="k">Agency</span><span class="v">${VEHICLE.agency}</span></div>
+       <div class="dc-row"><span class="k">Case #</span><span class="v">${caseId}</span></div>
+       <div class="dc-row"><span class="k">Vehicle</span><span class="v">${VEHICLE.color} ${VEHICLE.name.split(' ').slice(-2).join(' ')}</span></div>
+       <div class="dc-row"><span class="k">Plate · VIN</span><span class="v">${VEHICLE.plate} · ${VEHICLE.vin}</span></div>
+       <div class="dc-row"><span class="k">Mechanism</span><span class="v">8.4 g front-left · ~${state._impactSpeed||32} mph ${state._impactHeading||''}</span></div>
+       <div class="dc-row"><span class="k">Airbags · belt</span><span class="v">Deployed · restrained</span></div>
+       <div class="dc-row"><span class="k">Occupants</span><span class="v">1 (driver)</span></div>
+       <div class="dc-row"><span class="k">Hazards</span><span class="v">No fire · HV battery isolated</span></div>
+       <div class="dc-row"><span class="k">Coordinates</span><span class="v">${state.pos[0].toFixed(4)}, ${state.pos[1].toFixed(4)}</span></div>
+       <div class="dc-row"><span class="k">Units</span><span class="v">2 patrol + engine/rescue</span></div>
+       <div class="dc-row"><span class="k">ETA</span><span class="v" style="color:var(--ok)">~6 min</span></div>
+     </div>`);
+  toast('Police dispatched',VEHICLE.agency+' units en route · ETA ~6 min','crit',6000);
+  await sleep(900); if(aborted())return;
+
+  // hospital
+  emStep('hosp','Locating nearest hospital','Querying medical network for closest trauma center…','crit','active');
+  await sleep(1600); if(aborted())return;
+  emStep('hosp','Ambulance dispatched',VEHICLE.hospital.replace(/ \(.*$/,'')+' — full medical record transmitted ahead to the ER.','ok','done',
+    `<div class="dispatch-card">
+       <div class="dc-row"><span class="k">Hospital</span><span class="v">${VEHICLE.hospital}</span></div>
+       <div class="dc-row"><span class="k">Patient</span><span class="v">${DRIVER.name} · ${DRIVER.age} ${DRIVER.sex} · ${DRIVER.weight}</span></div>
+       <div class="dc-row"><span class="k">Blood type</span><span class="v">${DRIVER.blood}</span></div>
+       <div class="dc-row"><span class="k">Allergies</span><span class="v" style="color:var(--warn)">${DRIVER.allergies}</span></div>
+       <div class="dc-row"><span class="k">Conditions</span><span class="v">${DRIVER.conditions}</span></div>
+       <div class="dc-row"><span class="k">Medications</span><span class="v">${DRIVER.medications}</span></div>
+       <div class="dc-row"><span class="k">Est. vitals</span><span class="v">HR ~118 · BP ~96/62 · SpO₂ ~94%</span></div>
+       <div class="dc-row"><span class="k">Organ donor</span><span class="v">${DRIVER.organDonor}</span></div>
+       <div class="dc-row"><span class="k">Insurance</span><span class="v">${DRIVER.insurance}</span></div>
+       <div class="dc-row"><span class="k">Physician</span><span class="v">${DRIVER.physician}</span></div>
+       <div class="dc-row"><span class="k">ETA</span><span class="v" style="color:var(--ok)">~8 min</span></div>
+     </div>`);
+  toast('Ambulance dispatched',VEHICLE.hospital.replace(/ \(.*$/,'')+' · ETA ~8 min · record sent','crit',6000);
+  await sleep(900); if(aborted())return;
+
+  // notify contacts
+  emStep('contact','Notifying emergency contacts',
+    DRIVER.contact+' ('+DRIVER.phone+') and '+DRIVER.contact2+' alerted via SMS + automated call with live location, case '+caseId+' and status.','ok','done');
+  await sleep(700); if(aborted())return;
+
+  emFinish();
+}
+
+/* AEGIS speaks to the driver, listens, and lets the AI judge the reply.
+   An injured driver can't text — so this is voice in + voice out. The demo
+   reply buttons feed the SAME real AI classifier so it's bullet-proof live. */
+let _aegisReplyHook=null;
+function aegisDemoReply(kind){
+  const map={ coherent:"I'm okay, I'm a little shaken but I'm fine",
+              distress:"I can't... my chest really hurts, I can't move, please help",
+              silent:"" };
+  if(_aegisReplyHook) _aegisReplyHook(map[kind]==null?'':map[kind], 'demo-'+kind);
+}
+function aiDriverCheck(secs){
+  return new Promise(resolve=>{
+    const box=$('#emDriverCheck'); box.classList.add('show');
+    const btn=$('#imOkBtn'), numEl=$('#dcNum'), ringEl=$('#dcRing'), tEl=$('#dcTranscript');
+    tEl.textContent='listening for the driver…';
+    speak("This is AEGIS. I detected a severe crash. Can you hear me? Are you hurt?");
+    let heard='', settled=false;
+    const total=secs*1000, start=Date.now();
+    const stopListen=startListen(t=>{ heard=t; if(t) tEl.textContent='“'+t+'”'; });
+    const iv=setInterval(()=>{
+      const rem=Math.max(0,total-(Date.now()-start));
+      numEl.textContent=Math.ceil(rem/1000); setRing(ringEl,rem/total);
+      if(rem<=0) finish(heard,'timeout');
+    },80);
+    const ping=setInterval(()=>beep(680,.07,'sine',.03),1000);
+    async function finish(transcript,via){
+      if(settled) return; settled=true;
+      clearInterval(iv); clearInterval(ping); stopListen(); _aegisReplyHook=null;
+      btn.removeEventListener('click',onOk);
+      // give the driver/AEGIS a natural beat to register the reply before deciding
+      const t=(transcript||'').trim();
+      tEl.textContent = t ? ('“'+t+'” — assessing…') : 'no reply heard — assessing…';
+      numEl.textContent='…';
+      await sleep(1500);
+      box.classList.remove('show');
+      const v=await classifyReply(t);
+      resolve({...v, transcript:t, via});
+    }
+    function onOk(){ finish("I'm okay, I'm fine, just shaken up",'button-ok'); }
+    btn.addEventListener('click',onOk);
+    _aegisReplyHook=(t,via)=>finish(t,via);
+  });
+}
+
+/* AEGIS AI responder briefing — on-device LLM reads the crash + medical data */
+async function generateBriefing(){
+  const street=(state.streets&&state.streets.length)?state.streets[0]:'San Francisco';
+  const data=
+`Vehicle: ${VEHICLE.name} — ${VEHICLE.color}, plate ${VEHICLE.plate}, VIN ${VEHICLE.vin}
+Impact: 8.4 g front-left collision; ~${state._impactSpeed||32} mph at impact heading ${state._impactHeading||'NE'}; airbags deployed; vehicle immobilized; battery intact (no fire)
+Location: ${state.pos[0].toFixed(4)}, ${state.pos[1].toFixed(4)} (near ${street}, San Francisco)
+Time: ${new Date().toLocaleTimeString('en-US',{hour12:false})}; night; isolated; no bystanders within 250 m; nearest hospital ${VEHICLE.hospital}
+Occupants: 1 (driver, restrained)
+Patient: ${DRIVER.name}, ${DRIVER.age} y/o ${DRIVER.sex==='M'?'male':'female'}, ${DRIVER.weight}, blood type ${DRIVER.blood}
+Allergies: ${DRIVER.allergies}
+Chronic conditions: ${DRIVER.conditions}
+Current medications: ${DRIVER.medications}
+Organ donor: ${DRIVER.organDonor}
+Driver responsiveness: ${state._driverStatus||'unknown'}`;
+  if(AI.available){
+    const out=await aiGenerate(
+`CRASH DATA:
+${data}
+
+Triage rule: a driver who is unresponsive, OR reports being unable to move/breathe, severe pain, bleeding or chest pain after this high-energy crash is TRIAGE RED. Only use GREEN for a clearly uninjured, fully coherent driver.
+Write a detailed first-responder field briefing. Use EXACTLY these labelled lines, in order, each on its own line, and nothing else:
+TRIAGE: <RED/YELLOW/GREEN + short rationale>
+MECHANISM: <crash mechanism, speed, restraint & airbag status>
+PATIENT: <age, sex, weight, blood type>
+LIKELY INJURIES: <2-3 specific injuries expected from a front-left impact>
+MEDICAL ALERTS: <how the allergies and chronic conditions change treatment — be specific>
+MEDICATIONS: <relevance of their current meds to treatment>
+EST. VITALS: <plausible telematics-estimated HR, BP and SpO2 for this scenario>
+IMMEDIATE ACTIONS: <2-3 prioritised on-scene steps>
+UNITS: <recommended responding units>
+RECEIVING: <recommended receiving facility and why>
+RADIO: <one calm sentence a dispatcher reads aloud to crews>`,
+`You are AEGIS, an in-vehicle AI guardian briefing human paramedics and police after a crash. Be precise, clinical and calm. Plain text only, no markdown, no preamble, no closing remarks.`);
+    if(out && out.text && out.text.length>20) return {text:out.text, source:out.source, model:out.model};
+  }
+  return {text:offlineBrief(), source:'offline'};
+}
+function offlineBrief(){
+  const injured = state._driverStatus && /injur|distress|conscious|hurt|pain/i.test(state._driverStatus);
+  const al = (DRIVER.allergies && !/^none/i.test(DRIVER.allergies)) ? DRIVER.allergies : 'none on file';
+  const carShort = VEHICLE.name.split(' ').slice(-2).join(' ');
+  return [
+   'TRIAGE: RED — high-energy front-left impact, single restrained occupant, vehicle immobilized.',
+   'MECHANISM: ~'+(state._impactSpeed||32)+' mph frontal-oblique collision, airbags deployed, seatbelt engaged, no fire.',
+   'PATIENT: '+DRIVER.name+', '+DRIVER.age+' y/o '+(DRIVER.sex==='M'?'male':'female')+', '+DRIVER.weight+', blood '+DRIVER.blood+'.',
+   'LIKELY INJURIES: anterior chest / seatbelt-pattern trauma, possible rib fractures, head & cervical strain, left-side limb impact.',
+   'MEDICAL ALERTS: allergic to '+al+' — avoid those agents; '+(DRIVER.conditions||'no chronic conditions')+' — anticipate airway/BP complications.',
+   'MEDICATIONS: '+DRIVER.medications+' — locate rescue inhaler; account for antihypertensive in BP readings.',
+   'EST. VITALS: HR ~118 (elevated), BP ~96/62 (low), SpO₂ ~94% — consistent with pain/early shock.',
+   'IMMEDIATE ACTIONS: 1) protect c-spine & airway, 2) expose & assess chest, 3) large-bore IV, withhold penicillin-class drugs.',
+   'UNITS: 1 ALS ambulance, fire/rescue for extrication, 1 patrol unit for scene control.',
+   'RECEIVING: '+VEHICLE.hospital+' — nearest Level-1 trauma capability.',
+   'RADIO: "'+VEHICLE.color+' '+carShort+', solo restrained driver '+DRIVER.name+', severe front-left crash, '+(injured?'conscious but injured':'unresponsive')+', '+DRIVER.blood+', penicillin-allergic — requesting ALS and trauma activation now."'
+  ].join('\n');
+}
+
+function driverSafe(verdict){
+  state.emAborted=true;
+  $('#emBanner').classList.remove('show');
+  $('#emSteps').innerHTML='';
+  speak((verdict&&verdict.say) || "Okay, I'm glad you're responsive. Canceling the emergency call.");
+  const said = verdict&&verdict.transcript ? ` Driver said: “${verdict.transcript}”.` : '';
+  emStep('safe',"Driver confirmed responsive","AEGIS heard a coherent reply and canceled dispatch."+said+" Resuming normal monitoring.",'ok','done');
+  toast("Glad you're OK",'AEGIS canceled the emergency — driver responded.','ok');
+  log('Driver responded coherently'+(verdict&&verdict.source==='ollama'?(' ('+(AI.model||'AI')+' assessed)'):'')+' — emergency dispatch canceled','ok');
+  setTimeout(()=>{ closeEmergency(); }, 2600);
+}
+
+let etaTimers=[];
+function emFinish(){
+  log('Emergency response coordinated — help is on the way','crit');
+  $('#emFooter').classList.add('show');
+  startEta('#etaPolice',6*60);
+  startEta('#etaAmb',8*60);
+}
+function startEta(sel,secs){
+  let s=secs; const el=$(sel);
+  const iv=setInterval(()=>{
+    s=Math.max(0,s-1);
+    el.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+    if(s<=0) clearInterval(iv);
+  },1000);
+  etaTimers.push(iv);
+}
+
+function closeEmergency(){
+  $('#emergency').classList.remove('show');
+  etaTimers.forEach(clearInterval); etaTimers=[];
+  state.emergency=false;
+  // resume driving if not full reset
+  if(!state.emAborted){ state.speed=24; }
+  state.emAborted=false;
+  state.hazardActive=false;
+  renderTelemetry();
+}
+
+/* ---------- reset ---------- */
+function resetSystem(){
+  closeEmergency();
+  state.hazardActive=false; state.emergency=false; state.emAborted=false;
+  applyVehicle(VEHICLE);                       // restore this car's baseline + route
+  if(state.trail) state.trail.setLatLngs([]);
+  if(state.map) state.map.setView(state.pos,state.map.getZoom(),{animate:false});
+  $('#hazardBanner').classList.remove('show');
+  buildSysList();
+  renderTelemetry();
+  scheduleScan();
+  toast('System reset','Resuming normal monitoring.','info');
+  log('System reset — all monitors back to normal','info');
+}
+
+/* ---------- boot ---------- */
+initVehiclePicker();
+</script>
+</body>
+</html>
