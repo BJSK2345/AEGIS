@@ -37,15 +37,6 @@ npm start               # = node server.js  ->  http://localhost:4178
 No Ollama? It still runs — set a cloud key in `.env` (copy `.env.example`) for real AI,
 or just use the built-in offline templates.
 
-## Deploy to Vercel
-The repo is Vercel-ready: `index.html` is served statically and `api/ai-status.js` /
-`api/ai-generate.js` run as serverless functions (sharing `lib/ai.js`).
-
-1. Push to GitHub and "Import Project" in Vercel (Framework preset: **Other**, no build step).
-2. In **Settings → Environment Variables**, add `GROQ_API_KEY` = your key (or `ANTHROPIC_API_KEY`).
-3. Deploy. Ollama is skipped automatically in the cloud, so the AI uses the key
-   (and falls back to offline templates if it's missing).
-
 ## Project layout
 ```
 index.html          the entire app (UI + client logic)
