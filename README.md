@@ -16,12 +16,15 @@ backend. Everything (vehicles, sensors, dispatch) is simulated for the demo.
 - **360° surround-view evidence** captured and attached to the case on a crash.
 - **Road-following GPS**, smooth turns, live telemetry, hazard alerts.
 
-## The AI runs in three tiers (automatic)
+## The AI runs in tiers (automatic)
 1. **On-device Ollama** (`llama3.2`) — free & private, used in local dev.
-2. **Cloud API (Anthropic)** — used when Ollama isn't reachable (e.g. on Vercel). Set `ANTHROPIC_API_KEY`.
-3. **Offline templates** — built into the browser, so the app still works with no AI at all.
+2. **Groq** (`llama-3.3-70b-versatile`) — fast hosted 70B, used when Ollama isn't reachable (e.g. on Vercel). Set `GROQ_API_KEY`.
+3. **Anthropic Claude** — alternative cloud provider. Set `ANTHROPIC_API_KEY`.
+4. **Offline templates** — built into the browser, so the app still works with no AI at all.
 
-The API key is read on the server only and never reaches the browser.
+Order: Ollama → Groq → Anthropic → offline. To use Groq's bigger model **locally** too
+(instead of Ollama), set `AEGIS_SKIP_OLLAMA=1`. The API key is read on the server only and
+never reaches the browser.
 
 ## Run locally
 ```bash
@@ -39,7 +42,7 @@ The repo is Vercel-ready: `index.html` is served statically and `api/ai-status.j
 `api/ai-generate.js` run as serverless functions (sharing `lib/ai.js`).
 
 1. Push to GitHub and "Import Project" in Vercel (Framework preset: **Other**, no build step).
-2. In **Settings → Environment Variables**, add `ANTHROPIC_API_KEY` = your key.
+2. In **Settings → Environment Variables**, add `GROQ_API_KEY` = your key (or `ANTHROPIC_API_KEY`).
 3. Deploy. Ollama is skipped automatically in the cloud, so the AI uses the key
    (and falls back to offline templates if it's missing).
 
