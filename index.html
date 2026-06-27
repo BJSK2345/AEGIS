@@ -931,8 +931,10 @@ function showBanner(title,msg){
    Powers: spoken driver check-in + responder briefing.
    ============================================================ */
 const AI={available:false,source:'offline',model:null};
+function aiProviderName(s){ return s==='ollama'?'On-device AI':s==='groq'?'Groq AI':s==='cloud'?'Cloud AI':'Offline'; }
 function aiSrcLabel(source,model){
   if(source==='ollama') return 'on-device · '+(model||AI.model||'llama3.2');
+  if(source==='groq')   return 'Groq · '+(model||AI.model||'llama-3.3-70b');
   if(source==='cloud')  return 'cloud · '+(model||AI.model||'claude');
   return 'offline template';
 }
@@ -941,11 +943,13 @@ async function aiInit(){
   catch(e){ AI.available=false; AI.source='offline'; AI.model=null; }
   const txt=$('#aiPillTxt'), pill=$('#aiPill');
   const label = AI.source==='ollama' ? ('On-device AI · '+(AI.model||'llama3.2'))
+              : AI.source==='groq'   ? ('Groq AI · '+(AI.model||'llama-3.3-70b'))
               : AI.source==='cloud'  ? ('Cloud AI · '+(AI.model||'claude'))
               : 'AI offline · templates';
   if(txt) txt.textContent = label;
   if(pill) pill.classList.toggle('off',!AI.available);
   log(AI.source==='ollama' ? ('On-device AI ready — '+(AI.model||'llama3.2')+' · nothing leaves this vehicle')
+     : AI.source==='groq'  ? ('Groq AI ready — '+(AI.model||'llama-3.3-70b')+' · responding in real time')
      : AI.source==='cloud' ? ('Cloud AI ready — '+(AI.model||'claude'))
      : 'No live AI detected — using built-in offline templates', AI.available?'ok':'warn');
 }
@@ -1393,8 +1397,7 @@ async function runEmergency(caseId){
   await sleep(700); if(aborted())return;
 
   // ⭐ AEGIS AI responder briefing — on-device LLM reads crash + medical data
-  const analysing = AI.source==='ollama' ? ('On-device '+(AI.model||'llama3.2')+' is analysing the impact vector & medical profile…')
-                  : AI.source==='cloud' ? ('Cloud AI ('+(AI.model||'claude')+') is analysing the impact vector & medical profile…')
+  const analysing = AI.available ? (aiProviderName(AI.source)+' ('+(AI.model||'')+') is analysing the impact vector & medical profile…')
                   : 'Compiling responder briefing from crash + medical data…';
   emStep('brief','AEGIS AI · drafting responder briefing', analysing, 'info','active',
     `<div class="ai-brief"><div class="ai-brief-h"><span class="ai-badge">AI</span><span>${aiSrcLabel(AI.source,AI.model)}</span><span class="ai-cursor">▍</span></div><div class="ai-brief-body" id="aiBriefText"></div></div>`);
@@ -1411,7 +1414,7 @@ async function runEmergency(caseId){
     const src=bs.querySelector('.ai-brief-h span:nth-child(2)'); if(src) src.textContent = aiSrcLabel(brief.source,brief.model);
     const cur=bs.querySelector('.ai-cursor'); if(cur) cur.remove();
   }
-  toast('AI briefing sent', (brief.source==='offline'?'Offline':(brief.source==='cloud'?'Cloud AI':'On-device AI'))+' brief transmitted to responders.','info',6000);
+  toast('AI briefing sent', aiProviderName(brief.source)+' brief transmitted to responders.','info',6000);
   log('AEGIS AI responder briefing generated & transmitted ('+aiSrcLabel(brief.source,brief.model)+')','crit');
   await sleep(800); if(aborted())return;
 
